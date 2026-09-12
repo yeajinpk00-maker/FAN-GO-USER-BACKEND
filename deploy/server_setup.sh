@@ -37,7 +37,7 @@ sleep 2
 sudo systemctl status fangouser --no-pager || true
 
 echo "== 6. 헬스체크 =="
-curl -s http://127.0.0.1:8002/health && echo
+curl -s http://127.0.0.1:8000/health && echo
 
 echo
-echo "완료. 보안그룹에서 8002 포트를 열면 http://<EC2-공인IP>:8002/docs 로 접속 가능."
+echo "완료. 보안그룹에서 8000 포트를 열면 http://<EC2-공인IP>:8000/docs 로 접속 가능."

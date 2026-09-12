@@ -46,5 +46,5 @@ jobs:
           sudo systemctl restart fangouser
           sleep 3
           sudo systemctl is-active fangouser
-          curl -fsS http://127.0.0.1:8002/health && echo
+          curl -fsS http://127.0.0.1:8000/health && echo
           EOF

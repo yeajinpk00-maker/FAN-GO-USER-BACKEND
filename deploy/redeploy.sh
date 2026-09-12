@@ -6,4 +6,4 @@ cd /home/ec2-user/FANGO_USER
 sudo systemctl restart fangouser
 sleep 2
 sudo systemctl status fangouser --no-pager | head -n 10
-curl -s http://127.0.0.1:8002/health && echo
+curl -s http://127.0.0.1:8000/health && echo

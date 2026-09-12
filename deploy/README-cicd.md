@@ -1,7 +1,7 @@
 # GitHub Actions CI/CD 설정 (FANGO_USER)
 
 같은 EC2(`54.180.95.40`)에서 이미 돌고 있는 adminProject(8001)와 같은 구조를 따른다.
-이 프로젝트는 포트 **8002**, systemd 서비스명 **fangouser**를 쓴다.
+이 프로젝트는 포트 **8000**, systemd 서비스명 **fangouser**를 쓴다.
 
 ## 흐름
 
@@ -50,8 +50,8 @@ gh secret set EC2_SSH_KEY < D:\team2.pem
 
 ## 3. 보안그룹
 
-EC2 인바운드에 GitHub 러너가 붙을 **22번(SSH)**과, 테스트용으로 **8002번**이
-열려 있어야 한다(추후 nginx 붙이면 8002는 닫고 80/443만 유지).
+EC2 인바운드에 GitHub 러너가 붙을 **22번(SSH)**과, 테스트용으로 **8000번**이
+열려 있어야 한다(추후 nginx 붙이면 8000은 닫고 80/443만 유지).
 
 ## 4. 동작 확인
 
@@ -60,4 +60,4 @@ git commit --allow-empty -m "ci: trigger deploy"
 git push
 ```
 
-Actions 탭에서 CI/Deploy 진행 확인 후 `http://54.180.95.40:8002/docs` 접속.
+Actions 탭에서 CI/Deploy 진행 확인 후 `http://54.180.95.40:8000/docs` 접속.
