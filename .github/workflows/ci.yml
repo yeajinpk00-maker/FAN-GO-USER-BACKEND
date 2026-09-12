@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 문법 검사 (파이썬의 "빌드" 대체)
+        run: python -m compileall -q .
+
+      # main.py는 import 시점에 실제 DB(seed_defaults)에 접속하므로
+      # 클라우드 러너에서는 import/실행 검증을 하지 않는다.
+      # RDS 접속이 필요한 test_*.py 는 배포 후 deploy.yml 이 서버에서 실행한다.

@@ -109,6 +109,11 @@ def _start_batch_scheduler():
     start_scheduler()
 
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
 @app.get("/")
 async def root():
     return {"message": "Hello World"}

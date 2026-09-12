@@ -1,0 +1,50 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}   # 수동 실행 버튼
+
+concurrency:
+  group: deploy-ec2-fangouser
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH 키 설정
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: rsync 소스 전송
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.venv' \
+            --exclude '__pycache__' \
+            --exclude '.pytest_cache' \
+            --exclude '.idea' \
+            --exclude '.env' \
+            --exclude 'uploads' \
+            --exclude 'rag_store' \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            ./ "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/FANGO_USER/"
+
+      - name: 서버에서 재배포 + 헬스체크
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" bash -s <<'EOF'
+          set -euo pipefail
+          cd ~/FANGO_USER
+          chmod +x deploy/*.sh
+          ./.venv/bin/pip install -q -r requirements.txt
+          sudo systemctl restart fangouser
+          sleep 3
+          sudo systemctl is-active fangouser
+          curl -fsS http://127.0.0.1:8002/health && echo
+          EOF
