@@ -1,0 +1,625 @@
+<!doctype html>
+<title>team2 데이터 딕셔너리</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --bg:#faf9f6;
+  --surface:#ffffff;
+  --surface-2:#f2f0ea;
+  --border:#e2dfd6;
+  --border-strong:#cdc9bc;
+  --text:#201f1c;
+  --text-dim:#6f6b62;
+  --text-faint:#9a9588;
+  --accent:#5645d6;
+  --accent-text:#4534b8;
+  --accent-soft:#eeebfb;
+  --mono-bg:#f5f3ee;
+  --ok:#1f7a4d;
+  --ok-soft:#e4f3ea;
+  --flag:#a15e00;
+  --flag-soft:#fbeedd;
+  --flag-border:#eccf9e;
+  --shadow: 0 1px 2px rgba(32,31,28,.04), 0 8px 24px -12px rgba(32,31,28,.10);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16151a;
+    --surface:#1d1c22;
+    --surface-2:#242329;
+    --border:#34323b;
+    --border-strong:#454351;
+    --text:#ecebe6;
+    --text-dim:#a29eab;
+    --text-faint:#726e7c;
+    --accent:#9384ff;
+    --accent-text:#b8acff;
+    --accent-soft:#282440;
+    --mono-bg:#242230;
+    --ok:#4bd897;
+    --ok-soft:#1a3327;
+    --flag:#f0ab5c;
+    --flag-soft:#3a2a12;
+    --flag-border:#5a4322;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16151a;
+  --surface:#1d1c22;
+  --surface-2:#242329;
+  --border:#34323b;
+  --border-strong:#454351;
+  --text:#ecebe6;
+  --text-dim:#a29eab;
+  --text-faint:#726e7c;
+  --accent:#9384ff;
+  --accent-text:#b8acff;
+  --accent-soft:#282440;
+  --mono-bg:#242230;
+  --ok:#4bd897;
+  --ok-soft:#1a3327;
+  --flag:#f0ab5c;
+  --flag-soft:#3a2a12;
+  --flag-border:#5a4322;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:'IBM Plex Sans','IBM Plex Sans KR',-apple-system,sans-serif;
+  font-size:14.5px;
+  line-height:1.6;
+}
+::selection{background:var(--accent-soft); color:var(--accent-text)}
+
+h1,h2,h3{font-family:'Fraunces',serif; text-wrap:balance; margin:0}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums}
+
+a{color:var(--accent-text)}
+
+.shell{display:grid; grid-template-columns:272px 1fr; min-height:100vh}
+@media (max-width:900px){ .shell{grid-template-columns:1fr} .side{display:none} }
+
+.side{
+  position:sticky; top:0; align-self:start; height:100vh; overflow-y:auto;
+  border-right:1px solid var(--border); background:var(--surface);
+  padding:22px 18px 40px;
+}
+.side::-webkit-scrollbar{width:8px}
+.side::-webkit-scrollbar-thumb{background:var(--border-strong); border-radius:4px}
+
+.side-brand{display:flex; align-items:baseline; gap:8px; margin-bottom:4px}
+.side-brand .db{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:15px}
+.side-sub{color:var(--text-dim); font-size:12px; margin-bottom:18px}
+
+.side-stats{
+  display:grid; grid-template-columns:1fr 1fr; gap:1px;
+  background:var(--border); border:1px solid var(--border); border-radius:10px;
+  overflow:hidden; margin-bottom:22px;
+}
+.side-stats div{background:var(--surface); padding:9px 10px}
+.side-stats .n{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:16px; display:block}
+.side-stats .l{color:var(--text-faint); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em}
+
+.nav-domain{margin-bottom:16px}
+.nav-domain>a{
+  display:block; font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--text-faint); text-decoration:none; margin-bottom:6px;
+}
+.nav-domain>a:hover{color:var(--accent-text)}
+.nav-tbl{
+  display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+  padding:4px 0 4px 2px; text-decoration:none; color:var(--text-dim);
+  font-family:'IBM Plex Mono',monospace; font-size:12.5px; border-radius:5px;
+}
+.nav-tbl:hover{color:var(--text); background:var(--surface-2)}
+.nav-tbl .cnt{color:var(--text-faint); font-size:11px}
+
+main{padding:44px 48px 100px; max-width:980px}
+@media (max-width:700px){ main{padding:28px 20px 80px} }
+
+.header{margin-bottom:8px}
+.eyebrow{
+  font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--accent-text);
+  letter-spacing:.04em; margin-bottom:10px;
+}
+h1.title{font-size:36px; font-weight:600; letter-spacing:-.01em}
+.subtitle{color:var(--text-dim); margin-top:10px; max-width:62ch}
+
+.stat-row{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+  background:var(--border); border:1px solid var(--border); border-radius:12px;
+  overflow:hidden; margin:26px 0 30px;
+}
+@media (max-width:640px){ .stat-row{grid-template-columns:1fr 1fr} }
+.stat{background:var(--surface); padding:16px 18px}
+.stat .n{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:22px; display:block}
+.stat .l{color:var(--text-dim); font-size:12px; margin-top:2px}
+
+.callout{
+  background:var(--flag-soft); border:1px solid var(--flag-border); border-radius:12px;
+  padding:18px 20px; margin-bottom:40px;
+}
+.callout .ctitle{
+  font-weight:600; color:var(--flag); font-size:13px; text-transform:uppercase; letter-spacing:.05em;
+  margin-bottom:10px; display:flex; align-items:center; gap:7px;
+}
+.callout ul{margin:0; padding-left:18px; color:var(--text)}
+.callout li{margin-bottom:8px}
+.callout li:last-child{margin-bottom:0}
+.callout code{background:var(--surface); border:1px solid var(--flag-border); border-radius:4px; padding:1px 5px; font-size:12.5px}
+
+.domain{margin-top:56px; padding-top:8px; scroll-margin-top:20px}
+.domain-head{display:flex; align-items:baseline; gap:14px; margin-bottom:6px; border-bottom:2px solid var(--text); padding-bottom:12px}
+.domain-head h2{font-size:24px; font-weight:600}
+.domain-head .idx{font-family:'IBM Plex Mono',monospace; color:var(--text-faint); font-size:14px}
+.domain-desc{color:var(--text-dim); margin:10px 0 26px; max-width:68ch; font-size:13.5px}
+
+.table-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  box-shadow:var(--shadow); margin-bottom:22px; overflow:hidden; scroll-margin-top:20px;
+}
+.tc-head{
+  display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  padding:16px 20px; border-bottom:1px solid var(--border); background:var(--surface-2);
+}
+.tc-name{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:16px}
+.tc-name .schema{color:var(--text-faint); font-weight:400}
+.tc-badges{display:flex; gap:6px; align-items:center}
+.badge{
+  font-family:'IBM Plex Mono',monospace; font-size:11px; padding:2px 8px; border-radius:99px;
+  border:1px solid var(--border-strong); color:var(--text-dim); white-space:nowrap;
+}
+.badge.rows{background:var(--accent-soft); color:var(--accent-text); border-color:transparent}
+.badge.flag{background:var(--flag-soft); color:var(--flag); border-color:var(--flag-border)}
+.tc-desc{padding:14px 20px 4px; color:var(--text-dim); font-size:13px; max-width:74ch}
+.tc-desc b{color:var(--text); font-weight:600}
+
+.col-table{width:100%; border-collapse:collapse; margin-top:8px}
+.col-table th{
+  text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--text-faint); font-weight:600; padding:8px 20px; border-bottom:1px solid var(--border);
+}
+.col-table td{padding:8px 20px; border-bottom:1px solid var(--border); vertical-align:top}
+.col-table tr:last-child td{border-bottom:none}
+.col-table tr:hover td{background:var(--surface-2)}
+.cname{font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:500}
+.ctype{font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text-dim)}
+.cnote{color:var(--text-dim); font-size:12.5px; max-width:34ch}
+.key-pk{color:var(--accent-text); font-weight:600; font-size:11px; font-family:'IBM Plex Mono',monospace}
+.key-fk{color:var(--ok); font-weight:600; font-size:11px; font-family:'IBM Plex Mono',monospace}
+.key-uni{color:var(--text-dim); font-weight:600; font-size:11px; font-family:'IBM Plex Mono',monospace}
+.null-no{color:var(--text-dim); font-size:12px}
+.null-yes{color:var(--text-faint); font-size:12px}
+.fk-arrow{color:var(--text-faint)}
+
+footer{
+  max-width:980px; margin:60px auto 0; padding:24px 48px 60px; color:var(--text-faint); font-size:12px;
+  border-top:1px solid var(--border);
+}
+@media (max-width:700px){ footer{padding:24px 20px 60px} }
+</style>
+
+<div class="shell">
+  <nav class="side" id="side"></nav>
+  <main>
+    <div class="header">
+      <div class="eyebrow">DATABASE REFERENCE — mysql · team2</div>
+      <h1 class="title">데이터 딕셔너리</h1>
+      <p class="subtitle">AWS RDS <span class="mono">team2</span> 스키마를 <code class="mono">information_schema</code>로 직접 조회해 생성한 현재 시점 기준 문서입니다. 마이그레이션 SQL 파일이나 <span class="mono">models.py</span> 주석이 아니라 실 DB 상태를 그대로 반영합니다.</p>
+    </div>
+
+    <div class="stat-row" id="statRow"></div>
+
+    <div class="callout">
+      <div class="ctitle">⚠ 문서와 실제 DB가 어긋나 있던 지점</div>
+      <ul>
+        <li><code>migration_trip_interest_use_ctg.sql</code> 파일 주석은 "아직 DB에 적용하지 않았습니다"라고 되어 있지만, 실제 DB에는 <b>이미 적용되어 있습니다</b> — <span class="mono">trip_interest.interest_no</span> 컬럼과 <span class="mono">interest</span> 테이블이 모두 사라진 상태이며, <span class="mono">trip_interest.ctg_no</span>만 남아 있습니다.</li>
+        <li><code>migration_visit_feedback.sql</code>도 동일하게 "미적용"으로 적혀 있지만, <span class="mono">visit_feedback.reaction_no</span> 컬럼은 이미 제거되어 <span class="mono">(visit_feedback_no, trip_route_event_no, created_at)</span> 3컬럼만 남아 있습니다.</li>
+        <li>즉 두 마이그레이션 파일의 "실행 전 확인 요청" 경고는 <b>더 이상 유효하지 않습니다</b> — 재실행하면 이미 없는 컬럼/테이블을 지우려다 에러가 납니다.</li>
+        <li><code>accom.accom_lat</code>/<code>accom_lon</code>은 <b>DECIMAL(11,8)</b>이 최종 스펙입니다 — 이 문서에 한동안 남아있던 DECIMAL(10,8) 표기는 stale이었고, 실DB 재조회로 정정했습니다.</li>
+        <li>(2026-09-10 재확인) 스키마·테이블 구성 자체는 지난 스냅샷과 동일(32개 테이블, 변경 없음) — AL-02 챗봇 쪽 작업(지시어 재작성, 도구 확장 등)은 전부 애플리케이션 로직이라 DB 스키마에 영향 없음. 아래는 행 수만 실 사용량 반영해 갱신.</li>
+      </ul>
+    </div>
+
+    <div id="domains"></div>
+  </main>
+</div>
+
+<footer>team2 · MySQL(RDS, ap-northeast-2) · <span id="genDate"></span> 기준 실 스키마 조회 결과 · 32개 테이블</footer>
+
+<script>
+const DOMAINS = [
+{
+  id: 'ref', title: '기준 코드 테이블', desc: '숫자 코드(no)와 이름(nm)만 갖는 참조/룩업 테이블. 다른 테이블이 FK로 값을 끌어다 쓴다.',
+  tables: [
+    { name:'nationality', rows:249, desc:'국적 코드.', fks:[],
+      cols:[
+        {n:'nationality_no', t:'bigint', k:'PRI', ai:true},
+        {n:'nationality_nm', t:'varchar(50)'},
+      ]},
+    { name:'lang', rows:6, desc:'언어 코드.', fks:[],
+      cols:[
+        {n:'lang_no', t:'bigint', k:'PRI', ai:true},
+        {n:'lang_nm', t:'varchar(50)'},
+      ]},
+    { name:'nat_lang', rows:249, desc:'국적별 기본 언어 매핑. nationality_no 1:1 → lang_no.', fks:['nationality_no→nationality.nationality_no','lang_no→lang.lang_no'],
+      cols:[
+        {n:'nat_lang_no', t:'bigint', k:'PRI', ai:true},
+        {n:'nationality_no', t:'bigint', k:'UNI', note:'국적 1개당 행 1개'},
+        {n:'lang_no', t:'bigint', k:'MUL'},
+      ]},
+    { name:'auth', rows:4, desc:'사용자 권한 코드(예: 일반회원/관리자 등).', fks:[],
+      cols:[
+        {n:'auth_no', t:'bigint', k:'PRI', ai:true},
+        {n:'auth_nm', t:'varchar(50)'},
+      ]},
+    { name:'user_status', rows:4, desc:'계정 상태 코드(예: 정상/탈퇴 등).', fks:[],
+      cols:[
+        {n:'status_no', t:'bigint', k:'PRI', ai:true},
+        {n:'status_nm', t:'varchar(50)'},
+      ]},
+    { name:'op_status', rows:4, desc:'이벤트(event) 운영 상태 코드(예: 예정/진행중/종료).', fks:[],
+      cols:[
+        {n:'op_status_no', t:'bigint', k:'PRI', ai:true},
+        {n:'op_status_nm', t:'varchar(50)'},
+      ]},
+    { name:'ctg_type', rows:3, desc:'카테고리 대분류. ctg의 상위 구분자 — 어떤 ctg_type_no가 "이벤트 종류"이고 어떤 게 "여행 선호 관심사"인지의 기준이 된다.', fks:[],
+      cols:[
+        {n:'ctg_type_no', t:'bigint', k:'PRI', ai:true},
+        {n:'ctg_type_nm', t:'varchar(50)'},
+      ]},
+    { name:'ctg', rows:12, desc:'세부 카테고리. trip_interest는 이 중 ctg_type_no가 2 또는 3인 ctg만 선호 카테고리로 사용한다.', fks:['ctg_type_no→ctg_type.ctg_type_no'],
+      cols:[
+        {n:'ctg_no', t:'bigint', k:'PRI', ai:true},
+        {n:'ctg_nm', t:'varchar(50)'},
+        {n:'ctg_type_no', t:'bigint', k:'MUL'},
+      ]},
+    { name:'trip_density', rows:3, desc:'여행 동선 밀도 코드(예: 여유/보통/빡빡). trip 생성 이후 단계(동선 스타일 선택)에서 정해진다.', fks:[],
+      cols:[
+        {n:'trip_density_no', t:'bigint', k:'PRI', ai:true},
+        {n:'trip_density_nm', t:'varchar(50)'},
+      ]},
+    { name:'usage_status', rows:3, desc:'trip_route(확정 동선) 사용 상태 코드. 생성 시점엔 항상 "대기중"이고 배치(batch.py)가 날짜 경과에 따라 자동 전환한다.', fks:[],
+      cols:[
+        {n:'usage_status_no', t:'bigint', k:'PRI', ai:true},
+        {n:'usage_status_nm', t:'varchar(50)'},
+      ]},
+    { name:'review_opt', rows:4, desc:'리뷰 선택형 옵션(칩) 정의와 긍/부정 라벨.', fks:[],
+      cols:[
+        {n:'opt_no', t:'bigint', k:'PRI', ai:true},
+        {n:'opt_nm', t:'varchar(50)'},
+        {n:'sentiment', t:'varchar(10)', note:'긍정/부정 라벨'},
+      ]},
+  ]
+},
+{
+  id: 'artist', title: '아티스트', desc: '그룹과 멤버. event, favorite_group, rute_artist_select 등 여러 도메인에서 참조된다.',
+  tables: [
+    { name:'artist_group', rows:5, desc:'아티스트 그룹.', fks:[],
+      cols:[
+        {n:'artist_group_no', t:'bigint', k:'PRI', ai:true},
+        {n:'group_nm', t:'varchar(100)'},
+        {n:'agency', t:'varchar(100)'},
+        {n:'debut_dt', t:'date'},
+        {n:'fandom_nm', t:'varchar(100)'},
+        {n:'created_at', t:'datetime'},
+      ]},
+    { name:'artist', rows:56, desc:'그룹 소속 멤버.', fks:['artist_group_no→artist_group.artist_group_no','nationality_no→nationality.nationality_no'],
+      cols:[
+        {n:'artist_no', t:'bigint', k:'PRI', ai:true},
+        {n:'artist_nm', t:'varchar(100)'},
+        {n:'artist_group_no', t:'bigint', k:'MUL'},
+        {n:'birth', t:'date'},
+        {n:'real_nm', t:'varchar(100)'},
+        {n:'gender', t:'varchar(10)'},
+        {n:'origin', t:'varchar(100)'},
+        {n:'agency', t:'varchar(100)'},
+        {n:'created_at', t:'datetime'},
+        {n:'nationality_no', t:'bigint', k:'MUL'},
+      ]},
+  ]
+},
+{
+  id: 'user', title: '사용자 · 인증 · 챗봇', desc: '로그인 계정, 세션, 즐겨찾기, 챗봇 대화.',
+  tables: [
+    { name:'user', rows:14, desc:'회원 계정.', fks:['nationality_no→nationality.nationality_no','status_no→user_status.status_no','auth_no→auth.auth_no','lang_no→lang.lang_no'],
+      cols:[
+        {n:'user_no', t:'bigint', k:'PRI', ai:true},
+        {n:'login_id', t:'varchar(50)', k:'UNI'},
+        {n:'login_pw', t:'varchar(255)', note:'해시 저장'},
+        {n:'phone', t:'varchar(20)', null:true},
+        {n:'nationality_no', t:'bigint', k:'MUL'},
+        {n:'nickname', t:'varchar(50)'},
+        {n:'status_no', t:'bigint', k:'MUL'},
+        {n:'auth_no', t:'bigint', k:'MUL'},
+        {n:'lang_no', t:'bigint', k:'MUL'},
+        {n:'name', t:'varchar(50)', null:true},
+        {n:'gender', t:'varchar(10)', null:true},
+        {n:'birth', t:'date', null:true},
+        {n:'created_at', t:'datetime'},
+        {n:'profile_img', t:'varchar(255)', null:true, note:'마이페이지 프로필 사진 경로. 2026-09-06 추가 적용됨'},
+      ]},
+    { name:'refresh_token', rows:6, desc:'유저당 세션 1개(user_no UNIQUE) — 로그인할 때마다 기존 행을 덮어쓴다(재로그인 시 이전 세션 끊김). 원문 토큰은 저장하지 않고 SHA-256 해시만 대조.', fks:['user_no→user.user_no'],
+      cols:[
+        {n:'refresh_token_no', t:'bigint', k:'PRI', ai:true},
+        {n:'user_no', t:'bigint', k:'UNI'},
+        {n:'token_hash', t:'varchar(64)', k:'UNI'},
+        {n:'issued_at', t:'datetime', note:'기본값: 현재시각'},
+        {n:'expires_at', t:'datetime'},
+        {n:'revoked_at', t:'datetime', null:true},
+      ]},
+    { name:'favorite_group', rows:21, desc:'유저가 즐겨찾기한 아티스트 그룹.', fks:['artist_group_no→artist_group.artist_group_no','user_no→user.user_no'],
+      cols:[
+        {n:'favorite_group_no', t:'bigint', k:'PRI', ai:true},
+        {n:'artist_group_no', t:'bigint', k:'MUL'},
+        {n:'user_no', t:'bigint', k:'MUL'},
+        {n:'created_at', t:'datetime'},
+      ]},
+    { name:'chat_session', rows:2, desc:'챗봇 대화 세션. 세션 하나 = 연속된 멀티턴 대화 한 묶음.', fks:['user_no→user.user_no'],
+      cols:[
+        {n:'chat_session_no', t:'bigint', k:'PRI', ai:true},
+        {n:'user_no', t:'bigint', k:'MUL'},
+        {n:'created_at', t:'datetime', note:'기본값: 현재시각'},
+        {n:'last_message_at', t:'datetime', null:true},
+      ]},
+    { name:'chat_message', rows:16, desc:'세션 내 개별 메시지. sources/is_fallback은 role=assistant 행에만 채워지고 role=user 행은 둘 다 NULL.', fks:['chat_session_no→chat_session.chat_session_no'],
+      cols:[
+        {n:'chat_message_no', t:'bigint', k:'PRI', ai:true},
+        {n:'chat_session_no', t:'bigint', k:'MUL'},
+        {n:'role', t:'varchar(10)', note:"'user' | 'assistant'"},
+        {n:'content', t:'text'},
+        {n:'sources', t:'json', null:true, note:'assistant 행만 사용'},
+        {n:'is_fallback', t:'tinyint(1)', null:true, note:'assistant 행만 사용'},
+        {n:'created_at', t:'datetime', note:'기본값: 현재시각'},
+      ]},
+  ]
+},
+{
+  id: 'event', title: '이벤트 · 장소', desc: '콘서트/팝업 등 장소 정보와 혼잡도·운영시간·외부 리뷰. congestion·event_op_hour는 다른 팀(AL-02)이 관리하는 데이터.',
+  tables: [
+    { name:'event', rows:1928, desc:'행사/장소. artist_no·artist_group_no는 둘 다 nullable — 특정 멤버 단독 행사일 수도, 그룹 전체 행사일 수도 있다. GET /events/{event_no} 응답 스키마가 이 둘을 필수(int)로 잘못 선언해 individual-member 행을 조회하면 500이 나던 버그를 nullable로 완화해 수정 완료. ⚠ 동명이인(같은 event_nm) 다수 — 70종/264건, 그중 58종은 좌표까지 완전히 동일(같은 실제 장소가 멤버별로 중복 등록됨). 챗봇 쪽은 이 중복을 좌표 클러스터로 묶어 처리(§9 확인 이력류 문서 참고), event_no 기준 식별이 원칙.', fks:['ctg_no→ctg.ctg_no','op_status_no→op_status.op_status_no','artist_no→artist.artist_no','artist_group_no→artist_group.artist_group_no'],
+      cols:[
+        {n:'event_no', t:'bigint', k:'PRI', ai:true},
+        {n:'event_nm', t:'varchar(255)'},
+        {n:'start_dt', t:'timestamp', null:true},
+        {n:'end_dt', t:'timestamp', null:true},
+        {n:'event_desc', t:'text', null:true},
+        {n:'event_dtl', t:'text', null:true},
+        {n:'event_img_url', t:'varchar(500)', null:true, note:'2026-09-09 신규 컬럼. 1928건 중 1735건 이미 값 있음'},
+        {n:'ctg_no', t:'bigint', k:'MUL'},
+        {n:'add', t:'varchar(255)', note:'주소'},
+        {n:'post', t:'varchar(10)', null:true, note:'우편번호'},
+        {n:'event_lat', t:'decimal(9,6)'},
+        {n:'event_lon', t:'decimal(9,6)'},
+        {n:'op_status_no', t:'bigint', k:'MUL'},
+        {n:'artist_no', t:'bigint', k:'MUL', null:true},
+        {n:'artist_group_no', t:'bigint', k:'MUL', null:true},
+        {n:'created_at', t:'datetime'},
+      ]},
+    { name:'event_op_hour', rows:9100, desc:"운영시간(다른 팀 관리). op_dt는 컬럼명과 달리 실제 날짜가 아니라 '월'~'일' 요일 문자열이다 — congestion.weekday('1'~'7' 숫자 문자열)와 표기 체계가 다르다. 한 event_no당 요일 7개가 전부 채워지거나 아예 없는 경우만 실측됨. 챗봇 get_poi_business_hours가 조회하며, 동명이인 클러스터 중 실제로 데이터가 있는 건 8종뿐(그마저도 클러스터당 정확히 1개 event_no에만 있음 — 여러 event_no에 서로 다른 값이 공존하는 사례는 없음, 실측 확인).", fks:['event_no→event.event_no'],
+      cols:[
+        {n:'op_hour_no', t:'bigint', k:'PRI', ai:true},
+        {n:'open_tm', t:'varchar(5)', null:true},
+        {n:'close_tm', t:'varchar(5)', null:true},
+        {n:'event_no', t:'bigint', k:'MUL'},
+        {n:'op_dt', t:'varchar(50)', null:true, note:"실제로는 '월'~'일' 요일 문자열"},
+        {n:'created_at', t:'datetime', null:true},
+      ]},
+    { name:'congestion', rows:30576, desc:'혼잡도(다른 팀 AL-02 관리). event_no 하나당 weekday(1~7) × hour_of_day(0~23) 조합 수만큼 행이 존재하는 게 정상 구조. 2026-09-10부터 챗봇의 Function Calling(직접 SQL 조회)을 완전히 대체해, 이 데이터를 (event_no, weekday) 단위 자연어 문서로 변환해 ChromaDB에 임베딩한 뒤 RAG로만 답한다(get_congestion_pattern 도구는 제거됨).', fks:['event_no→event.event_no'],
+      cols:[
+        {n:'cong_no', t:'bigint', k:'PRI', ai:true},
+        {n:'event_no', t:'bigint', k:'MUL'},
+        {n:'weekday', t:'varchar(2)', note:'1=월 … 7=일 (ISO-8601)'},
+        {n:'hour_of_day', t:'tinyint', note:'0~23'},
+        {n:'day_avg', t:'decimal(4,1)', note:'해당 요일 평균 혼잡도 0~100'},
+        {n:'week_avg', t:'decimal(4,1)', null:true, note:'주간 평균 혼잡도 0~100'},
+        {n:'day_ratio', t:'decimal(4,2)', null:true, note:'GENERATED — 요일평균/주간평균, 앱에서 값 안 씀'},
+        {n:'cong_level', t:'tinyint', k:'MUL', null:true, note:'GENERATED — 0한산 1보통 2혼잡 3매우혼잡'},
+        {n:'created_at', t:'datetime', note:'기본값: 현재시각'},
+      ]},
+    { name:'external_review', rows:437, desc:'장소(이벤트) 하나에 여러 리뷰 행이 있을 수 있다. review_source 테이블(구글맵/카카오맵/캐치테이블 라벨)이 팀에서 삭제되며 출처 라벨 자체가 DB에서 없어졌다.', fks:['event_no→event.event_no'],
+      cols:[
+        {n:'external_review_no', t:'bigint', k:'PRI', ai:true},
+        {n:'review', t:'text', null:true},
+        {n:'event_no', t:'bigint', k:'MUL'},
+        {n:'rating', t:'decimal(2,1)', null:true},
+        {n:'fake_score', t:'decimal(5,2)', null:true},
+        {n:'total_score', t:'decimal(5,2)', null:true},
+        {n:'author_id', t:'varchar(100)', null:true},
+        {n:'created_at', t:'datetime', null:true},
+      ]},
+  ]
+},
+{
+  id: 'al02travel', title: 'AL-02 이동시간 캐시', desc: '카카오모빌리티 다중 목적지 길찾기 실API 연동 — on-demand(lazy) 캐시와 하루 900건 하드 쿼터 카운터. 2026-09-10부터 챗봇 get_travel_time 도구도 이 캐시를 읽기 전용으로 재사용(API 재호출 없음, 미스면 정직하게 정보 없음으로 처리).',
+  tables: [
+    { name:'travel_time_cache', rows:4907, desc:'origin(이벤트/숙소/여행 시작·종료 핀)→event 이동시간 캐시. 복합 PK라 같은 조합이면 항상 갱신(UPSERT), 재계산 없이 재사용된다.', fks:['destination_event_no→event.event_no'],
+      cols:[
+        {n:'origin_type', t:"enum('event','accom','trip_start_pin','trip_end_pin')", k:'PRI'},
+        {n:'origin_no', t:'bigint', k:'PRI', note:'origin_type이 accom/event면 그 PK, trip_*_pin이면 trip_no'},
+        {n:'destination_event_no', t:'bigint', k:'PRI'},
+        {n:'travel_mode', t:"enum('car','transit')", k:'PRI', note:'현재는 car만 실사용'},
+        {n:'duration_min', t:'int'},
+        {n:'fetched_at', t:'datetime'},
+      ]},
+    { name:'kakao_api_daily_usage', rows:2, desc:'카카오모빌리티 API 일일 호출 수 카운터. PK가 날짜라 자정이 지나면 새 행이 생기는 방식으로 자동 리셋된다(별도 배치/스케줄러 불필요). 리셋 기준은 DB 세션 UTC가 아니라 애플리케이션에서 계산한 KST 자정.', fks:[],
+      cols:[
+        {n:'usage_date', t:'date', k:'PRI'},
+        {n:'call_count', t:'int', note:'기본값 0, 900 도달 시 TravelTimeQuotaExceeded로 하드 락'},
+      ]},
+  ]
+},
+{
+  id: 'trip', title: '여행(Trip) 플로우', desc: '여행 초안 생성 → 선호 카테고리/멤버 선택 → 숙소/동선 확정 → 좋아요·리뷰까지 이어지는 핵심 도메인.',
+  tables: [
+    { name:'trip', rows:15, desc:'여행 초안. 이벤트 선택 + 여행 기간이 모두 정해진 시점에 행 하나가 생성된다(중간 상태를 DB에 걸쳐두지 않음). trip_density_no는 이후 단계(동선 스타일 선택)에서 채워지므로 생성 시점엔 NULL 가능.', fks:['event_no→event.event_no','user_no→user.user_no','trip_density_no→trip_density.trip_density_no'],
+      cols:[
+        {n:'trip_no', t:'bigint', k:'PRI', ai:true},
+        {n:'start_dt', t:'date'},
+        {n:'end_dt', t:'date'},
+        {n:'start_place', t:'varchar(255)', null:true},
+        {n:'end_place', t:'varchar(255)', null:true},
+        {n:'event_no', t:'bigint', k:'MUL'},
+        {n:'event_date', t:'date', note:'멀티데이 이벤트 중 사용자가 고른 특정 날짜'},
+        {n:'user_no', t:'bigint', k:'MUL'},
+        {n:'trip_density_no', t:'bigint', k:'MUL', null:true},
+        {n:'start_tm', t:'datetime', null:true},
+        {n:'end_tm', t:'datetime', null:true},
+        {n:'start_place_lat', t:'decimal(9,6)', null:true},
+        {n:'start_place_lon', t:'decimal(9,6)', null:true},
+        {n:'end_place_lat', t:'decimal(9,6)', null:true},
+        {n:'end_place_lon', t:'decimal(9,6)', null:true},
+        {n:'trip_type_no', t:'bigint', k:'MUL', null:true, note:'죽은 컬럼 — trip_type 테이블 삭제됨, FK 없음, 코드에서 값 안 씀'},
+        {n:'created_at', t:'datetime', null:true},
+      ]},
+    { name:'trip_interest', rows:41, desc:'여행 초안이 선택한 선호 카테고리(ctg_type_no 2/3 소속 ctg). rank는 프론트가 보낸 배열 순서(1부터). interest 테이블은 삭제되어 더 이상 존재하지 않는다.', fks:['ctg_no→ctg.ctg_no','trip_no→trip.trip_no'],
+      cols:[
+        {n:'trip_interest_no', t:'bigint', k:'PRI', ai:true},
+        {n:'trip_no', t:'bigint', k:'MUL'},
+        {n:'created_at', t:'datetime', null:true},
+        {n:'rank', t:'int', null:true},
+        {n:'ctg_no', t:'bigint', k:'MUL'},
+      ]},
+    { name:'rute_artist_select', rows:124, desc:'여행에서 실제로 보러 갈 멤버 선택. PK(select_no)만 다른 테이블과 달리 bigint가 아니라 int.', fks:['artist_no→artist.artist_no','trip_no→trip.trip_no'],
+      cols:[
+        {n:'select_no', t:'int', k:'PRI', ai:true, note:'다른 테이블과 달리 int'},
+        {n:'artist_no', t:'bigint', k:'MUL', null:true},
+        {n:'trip_no', t:'bigint', k:'MUL', null:true},
+      ]},
+    { name:'accom', rows:18, desc:'숙소. 여러 개 등록 가능(멀티 depot) — 날짜별로 그 날 체크인~체크아웃 범위에 해당하는 숙소가 그 날의 depot이 된다. 서로 다른 두 숙소의 유효 기간이 겹치는 입력은 POST /trips 생성 시점에 400으로 차단(정책 확정).', fks:['trip_no→trip.trip_no'],
+      cols:[
+        {n:'accom_no', t:'bigint', k:'PRI', ai:true},
+        {n:'accom_nm', t:'varchar(100)', null:true},
+        {n:'accom_lon', t:'decimal(11,8)', null:true, note:'DECIMAL(11,8)이 최종 스펙(경도 오버플로우 대응으로 의도적으로 넓힘)'},
+        {n:'accom_lat', t:'decimal(11,8)', null:true, note:'위와 동일'},
+        {n:'trip_no', t:'bigint', k:'MUL'},
+        {n:'check_in_dt', t:'date', null:true},
+        {n:'check_out_dt', t:'date', null:true},
+        {n:'add', t:'varchar(255)', null:true},
+        {n:'created_by', t:'varchar(50)', null:true},
+        {n:'created_at', t:'datetime', null:true},
+      ]},
+    { name:'trip_route', rows:18, desc:'확정된 동선의 일자 단위 로우 — 하루당 1개. 그 날 방문하는 이벤트들은 trip_route_event에 자식으로 딸린다(하루 보통 4~5개). usage_status_no는 생성 시점엔 항상 "대기중", 배치(batch.py)가 날짜 경과에 따라 자동 전환.', fks:['trip_no→trip.trip_no','usage_status_no→usage_status.usage_status_no'],
+      cols:[
+        {n:'trip_route_no', t:'bigint', k:'PRI', ai:true},
+        {n:'trip_no', t:'bigint', k:'MUL'},
+        {n:'visit_day', t:'smallint', null:true},
+        {n:'created_at', t:'datetime', null:true},
+        {n:'usage_status_no', t:'bigint', k:'MUL'},
+      ]},
+    { name:'trip_route_event', rows:84, desc:'하루 동선(trip_route) 안의 개별 이벤트. seq는 그 날 안에서의 방문 순서(1부터).', fks:['trip_route_no→trip_route.trip_route_no','event_no→event.event_no'],
+      cols:[
+        {n:'trip_route_event_no', t:'bigint', k:'PRI', ai:true},
+        {n:'trip_route_no', t:'bigint', k:'MUL'},
+        {n:'event_no', t:'bigint', k:'MUL'},
+        {n:'seq', t:'int', null:true},
+        {n:'created_at', t:'datetime', null:true},
+      ]},
+    { name:'visit_feedback', rows:6, desc:'장소(그 날의 특정 이벤트)별 "좋아요" — reaction 테이블 삭제로 온/오프 단순 모델이 됨. 행이 있으면 좋아요, 없으면 아니다. trip_route가 일자 단위로 바뀌며 대상이 trip_route_event(이벤트 단위)로 변경됨.', flag:'reaction_no 컬럼 삭제 이미 적용됨', fks:['trip_route_event_no→trip_route_event.trip_route_event_no'],
+      cols:[
+        {n:'visit_feedback_no', t:'bigint', k:'PRI', ai:true},
+        {n:'trip_route_event_no', t:'bigint', k:'MUL'},
+        {n:'created_at', t:'datetime', null:true},
+      ]},
+    { name:'review', rows:1, desc:'trip.trip_no에 UNIQUE 제약이 걸려 있어 trip당 리뷰는 최대 1개.', fks:['opt_no→review_opt.opt_no','trip_no→trip.trip_no'],
+      cols:[
+        {n:'review_no', t:'bigint', k:'PRI', ai:true},
+        {n:'review_content', t:'text', null:true},
+        {n:'opt_no', t:'bigint', k:'MUL', null:true},
+        {n:'written_at', t:'timestamp'},
+        {n:'rating', t:'decimal(2,1)', null:true},
+        {n:'trip_no', t:'bigint', k:'UNI', note:'trip당 최대 1행'},
+        {n:'created_at', t:'datetime', null:true},
+      ]},
+  ]
+},
+];
+
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function fkFor(colName, fks){
+  const hit = (fks||[]).find(f => f.split('→')[0] === colName);
+  if(!hit) return null;
+  return hit.split('→')[1];
+}
+
+function keyBadge(col, fkTarget){
+  if(col.k === 'PRI') return '<span class="key-pk">PK</span>';
+  if(fkTarget) return `<span class="key-fk">FK</span> <span class="fk-arrow mono">→ ${esc(fkTarget)}</span>`;
+  if(col.k === 'UNI') return '<span class="key-uni">UNIQUE</span>';
+  return '<span class="text-faint">—</span>';
+}
+
+let totalRows = 0, totalTables = 0;
+DOMAINS.forEach(d => d.tables.forEach(t => { totalRows += t.rows; totalTables++; }));
+
+document.getElementById('statRow').innerHTML = `
+  <div class="stat"><span class="n mono">${totalTables}</span><span class="l">테이블</span></div>
+  <div class="stat"><span class="n mono">${totalRows.toLocaleString('ko-KR')}</span><span class="l">전체 행 수</span></div>
+  <div class="stat"><span class="n mono">${DOMAINS.length}</span><span class="l">도메인 그룹</span></div>
+  <div class="stat"><span class="n mono">RDS</span><span class="l">ap-northeast-2 · MySQL</span></div>
+`;
+
+const sideEl = document.getElementById('side');
+const domainsEl = document.getElementById('domains');
+let sideHtml = `
+  <div class="side-brand"><span class="db">team2</span></div>
+  <div class="side-sub">실 DB 스키마 · 직접 조회</div>
+`;
+
+DOMAINS.forEach((d, di) => {
+  sideHtml += `<div class="nav-domain"><a href="#d-${d.id}">${esc(d.title)}</a>`;
+  d.tables.forEach(t => {
+    sideHtml += `<a class="nav-tbl" href="#t-${t.name}"><span>${esc(t.name)}</span><span class="cnt mono">${t.rows.toLocaleString('ko-KR')}</span></a>`;
+  });
+  sideHtml += `</div>`;
+
+  let tablesHtml = '';
+  d.tables.forEach(t => {
+    const rowsHtml = t.cols.map(col => {
+      const fkTarget = fkFor(col.n, t.fks);
+      return `<tr>
+        <td class="cname">${esc(col.n)}</td>
+        <td class="ctype mono">${esc(col.t)}${col.ai ? ' <span class="text-faint">AI</span>' : ''}</td>
+        <td class="${col.null ? 'null-yes' : 'null-no'}">${col.null ? '허용' : '필수'}</td>
+        <td>${keyBadge(col, fkTarget)}</td>
+        <td class="cnote">${col.note ? esc(col.note) : ''}</td>
+      </tr>`;
+    }).join('');
+
+    tablesHtml += `
+      <div class="table-card" id="t-${t.name}">
+        <div class="tc-head">
+          <div class="tc-name">${esc(t.name)} <span class="schema">· team2</span></div>
+          <div class="tc-badges">
+            ${t.flag ? `<span class="badge flag">⚠ ${esc(t.flag)}</span>` : ''}
+            <span class="badge rows">${t.rows.toLocaleString('ko-KR')} rows</span>
+          </div>
+        </div>
+        <div class="tc-desc">${esc(t.desc)}</div>
+        <table class="col-table">
+          <thead><tr><th>컬럼</th><th>타입</th><th>NULL</th><th>키</th><th>설명</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+    `;
+  });
+
+  domainsEl.innerHTML += `
+    <section class="domain" id="d-${d.id}">
+      <div class="domain-head"><span class="idx mono">0${di+1}</span><h2>${esc(d.title)}</h2></div>
+      <p class="domain-desc">${esc(d.desc)}</p>
+      ${tablesHtml}
+    </section>
+  `;
+});
+
+sideEl.innerHTML = sideHtml;
+document.getElementById('genDate').textContent = new Date().toISOString().slice(0,10);
+</script>

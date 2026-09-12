@@ -1,0 +1,17 @@
+.env
+__pycache__/
+.venv/
+*.pyc
+server_out.log
+server_err.log
+pid.txt
+
+# IDE
+.idea/
+
+# 런타임에 생성되는 파일 — 소스 아님, 커밋 대상 아님
+uploads/
+rag_store/
+
+# 과거 작업 산출물(문서/이미지) — 소스 코드 저장소 범위 밖
+Claude outputs/
