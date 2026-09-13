@@ -113,12 +113,17 @@ KNOWN_CHAIN_PREFIXES = {
     "올리브영": "oliveyoung",
     "다이소": "daiso",
     "스타벅스": "starbucks",
+    "무신사": "musinsa",          # 2026-09-13 추가
 }
 
 # ── 문서 4.2 하드 제약 ──────────────────────────────────────────────
 MAX_SAME_EVENT_PER_TRIP = 1
 MAX_SAME_BRAND_PER_TRIP = 1       # brand_key를 신뢰성 있게 얻은 경우만 적용(al02_diversity.derive_brand_key)
-MAX_SHOPPING_PER_TRIP = 1
+# 2026-09-13: 1 -> 2. 실 DB 확인 결과 쇼핑 카테고리에 올리브영(1073개) +
+# 다이소(81개) + 기타(71개)가 있어 브랜드가 다양하다. MAX_SAME_BRAND_PER_TRIP=1
+# 이 이미 있어서 올리브영끼리 중복은 막히고, 올리브영+다이소처럼 다른 브랜드는
+# 허용된다. 13곳 -> 15곳 달성 가능.
+MAX_SHOPPING_PER_TRIP = 2
 MAX_SAME_CATEGORY_PER_DAY = 1     # 기본(비완화) 하루 상한
 RELAXED_SAME_CATEGORY_PER_DAY = 2  # 문서 4.4/5.6 — dense 비공연일, 후보 부족 시에만 적용
 
@@ -156,7 +161,7 @@ CATEGORY_TRIP_CAP_POLICY = {
     2: {"r": 0.30, "A": 2},
     3: {"r": 0.25, "A": 2},
     "unselected": {"r": 0.20, "A": 1},
-    "shopping": {"r": 0.20, "A": 1},
+    "shopping": {"r": 0.20, "A": 2},   # 2026-09-13: 1 -> 2 (MAX_SHOPPING_PER_TRIP 변경과 정합)
 }
 
 # ── 문서 5.7 — selection_score = relevance + coverage_bonus - redundancy_penalty ──

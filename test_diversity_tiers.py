@@ -177,8 +177,12 @@ events18b, result18 = build_and_run(
 )
 concert_day18 = result18["days"][0]
 non_concert_count_18 = sum(1 for s in concert_day18["schedule"] if not s["is_concert"])
+# 2026-09-13: <=2였던 걸 ==2로 강화 — s3_fill_with_tier2()가 day_plans[d](공연 포함
+# 개수)를 "공연 제외" 목표와 그대로 비교해 공연일마다 항상 1곳 적게 채우던 버그가
+# 있었다(Tier2 후보가 이 케이스처럼 충분히 남아 있어도 마찬가지). <=2로는 그 버그가
+# 만드는 실제값 1도 통과해버려 회귀를 못 잡았다 — 정확히 2여야 통과하도록 강화.
 check(f"balanced 공연일 일반 POI 목표(2)에 맞춰 채워짐(실제 {non_concert_count_18})",
-      non_concert_count_18 <= 2)
+      non_concert_count_18 == 2)
 check("공연이 마지막 방문으로 고정됨", concert_day18["schedule"][-1]["is_concert"])
 day_cat_counts_18 = {}
 for s in concert_day18["schedule"]:

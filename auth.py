@@ -550,7 +550,13 @@ MAIN_EVENT_CTG_TYPE_NO = 1
 # 동일 이벤트/브랜드/쇼핑 전체-여행 1회 + 하루 동일 ctg_no 최대 1곳(ENABLE_HARD_DEDUP)은
 # 계속 유지한다. 사용자가 최종 확인 후 아래 값을 True로 바꾸면 Tier2/3차 완화가 함께
 # 켜진다(fetch_candidates의 include_tier2도 이 값에 맞춰 같이 조절됨 — 따로 안 건드려도 됨).
-ENABLE_DIVERSITY_TIERS = False
+# 2026-09-13: False -> True. 실 DB 재현 결과 이 값이 False 면 include_tier2/
+# enable_diversity 가 둘 다 꺼진 채 enable_hard_dedup(하루 동일 ctg_no 1곳)만
+# 걸려서, 제약을 풀 수단(Tier2 개방 + dense 완화) 없이 제약만 남는다 —
+# trip_no=108 이 [1, 0, 0](총 1곳), trip_no=43 이 [1, 1, 1](총 3곳)까지 떨어졌다.
+# True 로 켜면 각각 [5, 2, 2] / [4, 4, 2] 로 회복되고, al02_candidates.
+# balanced_trim() 까지 반영하면 [5, 4, 4] / [5, 4, 4] 가 된다.
+ENABLE_DIVERSITY_TIERS = True
 ENABLE_HARD_DEDUP = True  # 동일 이벤트/브랜드(allow-list)/쇼핑 전체-여행 1회 — 항상 유지
 
 

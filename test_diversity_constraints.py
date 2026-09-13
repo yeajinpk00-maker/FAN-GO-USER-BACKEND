@@ -28,6 +28,7 @@ from al02_diversity import (
     make_diversity_caps,
 )
 from al02_pipeline import AL02Pipeline, build_cache, calc_relevance, hard_filter
+from al02_policy import MAX_SHOPPING_PER_TRIP
 
 PASS_COUNT = 0
 FAIL_COUNT = 0
@@ -122,10 +123,13 @@ oliveyoung_count = sum(1 for s in [x for day in result["days"] for x in day["sch
                        if derive_brand_key(s["event_nm"]) == "oliveyoung")
 check(f"올리브영 후보 8개 중 트립 전체 채택은 <=1곳 (실제 {oliveyoung_count})", oliveyoung_count <= 1)
 
-print("\n=== T03: 쇼핑 카테고리 트립 전체 최대 1곳 ===")
+print(f"\n=== T03: 쇼핑 카테고리 트립 전체 최대 {MAX_SHOPPING_PER_TRIP}곳(al02_policy.MAX_SHOPPING_PER_TRIP) ===")
+# 2026-09-13: MAX_SHOPPING_PER_TRIP이 1->2로 바뀌어서(al02_policy.py 참고) 이 테스트도
+# 하드코딩된 <=1 대신 정책 상수를 그대로 참조하도록 수정 — 값이 또 바뀌어도 안 깨짐.
 shopping_count = sum(1 for s in [x for day in result["days"] for x in day["schedule"]]
                      if any(e["event_no"] == s["event_no"] and e["ctg_no"] == 13 for e in events))
-check(f"쇼핑(올리브영+다이소 10개) 중 트립 전체 채택은 <=1곳 (실제 {shopping_count})", shopping_count <= 1)
+check(f"쇼핑(올리브영+다이소 10개) 중 트립 전체 채택은 <={MAX_SHOPPING_PER_TRIP}곳 (실제 {shopping_count})",
+      shopping_count <= MAX_SHOPPING_PER_TRIP)
 
 print("\n=== T04: 하루 동일 ctg_no 최대 1곳(비공연일, B=balanced=완화 없음) ===")
 day_cat_ok = True

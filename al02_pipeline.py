@@ -965,10 +965,16 @@ def s3_fill_with_tier2(day_plans, remaining_candidates, frame, matrix, names, st
         if target is None:
             continue
         is_c = (d == concert_day)
+        # 버그 수정(2026-09-13): target_visits_by_day[공연일]은 "공연 제외 순수 POI
+        # 목표"(al02_policy.CONCERT_DAY_GENERAL_POI_TARGET)인데, day_plans[d]는 공연이
+        # 이미 1개 들어있는 상태(s3_greedy 시작 시 삽입)라 len(day_plans[d])을 그대로
+        # target과 비교하면 공연일마다 목표보다 항상 1곳 적게 채우고 멈췄다(아래
+        # diversity_incomplete_days 계산은 이미 이 -1 보정을 하고 있었음 — 여기만 누락).
+        concert_offset = 1 if (is_c and concert_idx_int is not None) else 0
         for idx, score in remaining:
             if idx in assigned:
                 continue
-            if len(day_plans[d]) >= target:
+            if len(day_plans[d]) - concert_offset >= target:
                 break
             if open_matrix is not None and not open_matrix[idx, d]:
                 continue
@@ -1469,6 +1475,19 @@ class AL02Pipeline:
                 "dropped_for_time": [p for p in dropped],  # 시간초과로 제외된 장소
                 "schedule": schedule,
             })
+
+        # 버그 수정(2026-09-13) — tier2_used_by_day는 S3 배정 시점(S4 이전)에 기록된
+        # 것이라, S4가 시간 초과로 그중 일부를 다시 빼면(위 all_dropped) 실제 최종
+        # day_plans엔 없는 event_no가 통계에 남는다(tier1_used는 day_plans 기준으로
+        # 아래서 새로 세므로 이 문제가 없음 — tier2_used_by_day만 놓쳤던 비대칭).
+        # S4 이후 확정된 day_plans 기준으로 다시 걸러낸다.
+        final_event_nos_by_day = {
+            d: {events[i].get("event_no") for i in day_plans[d]} for d in range(n_days)
+        }
+        tier2_used_by_day = {
+            d: [eno for eno in event_nos if eno in final_event_nos_by_day.get(d, set())]
+            for d, event_nos in tier2_used_by_day.items()
+        }
 
         verification = verify(day_plans, frame, concert_matrix_idx, s4_results,
                                visit_max=resolved_visit_max,

@@ -44,6 +44,8 @@ S0(fetch_candidates)와 대체 장소 추천(al02_alternatives.get_alternatives)
 """
 
 import random
+from collections import defaultdict
+from datetime import datetime
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
@@ -55,8 +57,10 @@ from al02_policy import (
     CANDIDATE_SEARCH_DEFAULT_RADIUS_KM,
     CANDIDATE_SEARCH_ROW_LIMIT,
     CANDIDATE_TOP_N_MAX,
+    MAX_SHOPPING_PER_TRIP,
     PREFERENCE_TIER_1,
     PREFERENCE_TIER_2,
+    SHOPPING_CTG_NOS,
 )
 from models import Artist
 
@@ -359,6 +363,106 @@ def fetch_business_hours(db: Session, event_nos: list[int]) -> dict[int, dict[st
     return result
 
 
+def balanced_trim(scored, top_n, *, n_days, shopping_ctg_nos,
+                  max_shopping_per_trip, per_day_cap=2):
+    """카테고리 라운드로빈 트리밍 (2026-09-13 신규).
+
+    기존 `scored[:top_n]` 은 relevance 내림차순으로만 잘라서, category_fitness ROC
+    가중치 구조상 1순위 카테고리가 상위권을 독식한다.
+
+        relevance = 0.6483*artist_match + 0.2297*category_fitness + 0.1220*place_quality
+
+    성지/관광 후보는 대부분 artist_match=0 이라 남는 건 category_fitness 와
+    place_quality 뿐인데, ROC 1순위(0.2297*0.611=0.1404)와 3순위(0.2297*0.111=0.0255)의
+    차이 0.1149 가 place_quality 실제 편차(total_score 70~90 기준 약 0.024)보다 5배
+    커서, 1순위 카테고리가 상위권을 전부 차지한다.
+
+    실측(2026-09-13, 실 DB):
+      - trip_no=108: Tier1 20개가 100% 쇼핑(ctg_no=13)
+      - trip_no=100: 풀 55개 중 37개(67%)가 쇼핑
+      쇼핑은 MAX_SHOPPING_PER_TRIP=1 이라 나머지는 뽑히는 순간 버려질 후보였다.
+      그 결과 프로덕션에서 trip_no=108 이 [1, 0, 0](총 1곳)까지 떨어졌다.
+
+    이 함수는 카테고리별로 "실제로 쓸 수 있는 최대 개수"만큼만 뽑는다.
+      - 쇼핑(shopping_ctg_nos): max_shopping_per_trip 개
+      - 그 외: n_days * per_day_cap 개
+    각 카테고리 안에서는 기존과 동일하게 relevance 내림차순 순서를 지킨다.
+
+    per_day_cap 을 2로 둔 이유: 실제 게이팅은 al02_diversity.can_insert_candidate 가
+    하므로 여기서는 완화 상한(RELAXED_SAME_CATEGORY_PER_DAY=2) 기준으로 넉넉히 뽑아야
+    한다. n_days 만큼만(per_day_cap=1) 뽑으면 dense(C) 프로파일에서 트리밍 단계가
+    새로운 공급 부족을 만든다 — 실측으로 trip_no=100 이 18곳에서 13곳으로 오히려
+    나빠졌다. per_day_cap=3 은 2와 결과가 같고 풀만 커져서 2로 확정.
+
+    실측 효과 (top_n=20, include_tier2=True, enable_diversity=True):
+      trip_no=43  [4,4,3] 11곳 -> [5,4,4] 13곳
+      trip_no=100 [7,6,5] 18곳 -> [7,7,7] 21곳 (목표 달성)
+      trip_no=108 [5,2,2]  9곳 -> [5,4,4] 13곳
+
+    Parameters
+    ----------
+    scored : list[tuple[dict, float]]
+        (event_dict, relevance) 리스트. relevance 내림차순 정렬된 상태를 전제한다.
+    top_n : int
+        최대 반환 개수.
+    n_days : int
+        여행 일수.
+    shopping_ctg_nos : set[int]
+        al02_policy.SHOPPING_CTG_NOS
+    max_shopping_per_trip : int
+        al02_policy.MAX_SHOPPING_PER_TRIP
+    per_day_cap : int
+        카테고리당 하루 최대 후보 수. 기본 2(완화 상한 기준).
+
+    Returns
+    -------
+    list[tuple[dict, float]]
+        최대 top_n 개. relevance 내림차순으로 정렬해서 돌려준다
+        (하위 로직이 정렬 상태를 전제하므로).
+    """
+    if not scored:
+        return []
+
+    buckets = defaultdict(list)
+    for pair in scored:
+        buckets[pair[0].get("ctg_no")].append(pair)
+
+    def cap_of(ctg_no):
+        if ctg_no in shopping_ctg_nos:
+            return max_shopping_per_trip
+        return n_days * per_day_cap
+
+    picked = []
+    taken_by_ctg = defaultdict(int)
+    round_i = 0
+
+    while len(picked) < top_n:
+        added = False
+        for ctg_no, items in buckets.items():
+            if len(picked) >= top_n:
+                break
+            if round_i < len(items) and taken_by_ctg[ctg_no] < cap_of(ctg_no):
+                picked.append(items[round_i])
+                taken_by_ctg[ctg_no] += 1
+                added = True
+        if not added:
+            break
+        round_i += 1
+
+    picked.sort(key=lambda pair: pair[1], reverse=True)
+    return picked
+
+
+def trip_n_days(user_input):
+    """user_input 의 trip_start/trip_end 로 여행 일수 계산(balanced_trim 용).
+
+    al02_pipeline.build_trip_frame() 과 동일한 "%Y-%m-%d" 파싱 + 양끝 포함 기준.
+    """
+    start = datetime.strptime(user_input["trip_start"], "%Y-%m-%d").date()
+    end = datetime.strptime(user_input["trip_end"], "%Y-%m-%d").date()
+    return (end - start).days + 1
+
+
 def fetch_candidates(
     db: Session,
     user_input: dict,
@@ -464,13 +568,28 @@ def fetch_candidates(
         scored.append((ev, r["relevance"]))
     scored.sort(key=lambda pair: pair[1], reverse=True)
 
+    # 2026-09-13: relevance 단독 트리밍(scored[:top_n])이 한 카테고리를 독식시켜 후보를
+    # 사실상 못 쓰게 만들던 문제를 balanced_trim()으로 대체한다 — 근거·실측은
+    # balanced_trim() docstring 참고. n_days는 카테고리별 상한 계산에만 쓴다.
+    n_days = trip_n_days(user_input)
+
     # 콘서트는 relevance 순위와 무관하게 항상 포함(run()이 하드 요구) — 재축소로 잘려나가면 안 됨.
     if concert_event_no is not None:
         concert_pair = next((p for p in scored if p[0]["event_no"] == concert_event_no), None)
         rest = [p for p in scored if p[0]["event_no"] != concert_event_no]
-        trimmed = ([concert_pair] if concert_pair else []) + rest[:top_n]
+        trimmed = ([concert_pair] if concert_pair else []) + balanced_trim(
+            rest, top_n,
+            n_days=n_days,
+            shopping_ctg_nos=SHOPPING_CTG_NOS,
+            max_shopping_per_trip=MAX_SHOPPING_PER_TRIP,
+        )
     else:
-        trimmed = scored[:top_n]
+        trimmed = balanced_trim(
+            scored, top_n,
+            n_days=n_days,
+            shopping_ctg_nos=SHOPPING_CTG_NOS,
+            max_shopping_per_trip=MAX_SHOPPING_PER_TRIP,
+        )
 
     # Tier2도 같은 방식으로 채점 후 재축소(tier2_top_n) — category_fitness는
     # al02_pipeline.category_fitness()가 이미 계산하는 기존 MISS=0.3이 그대로 적용된다
@@ -482,7 +601,12 @@ def fetch_candidates(
         r = calc_relevance(ev, user_input, artist_group_map=artist_group_map)
         tier2_scored.append((ev, r["relevance"]))
     tier2_scored.sort(key=lambda pair: pair[1], reverse=True)
-    tier2_trimmed = tier2_scored[:tier2_top_n]
+    tier2_trimmed = balanced_trim(
+        tier2_scored, tier2_top_n,
+        n_days=n_days,
+        shopping_ctg_nos=SHOPPING_CTG_NOS,
+        max_shopping_per_trip=MAX_SHOPPING_PER_TRIP,
+    )
 
     trimmed_events = [ev for ev, _ in trimmed] + [ev for ev, _ in tier2_trimmed]
     candidates = [(i, score) for i, (_, score) in enumerate(trimmed + tier2_trimmed)]
