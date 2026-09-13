@@ -91,8 +91,7 @@ seed_defaults()
 app = FastAPI()
 app.include_router(auth_router)
 
-# 로컬 개발 서버 주소(고정) + .env의 EXTRA_CORS_ORIGINS(쉼표 구분)로 배포 프론트
-# 주소를 코드 수정/재배포 없이 추가할 수 있게 함.
+# 로컬 개발 서버 주소 + 배포 서버(EC2) 프론트 주소.
 # allow_credentials=True 조합에서는 이 목록에 없는 origin은 브라우저가 응답을
 # CORS로 막아버리고, 그 결과가 프론트 쪽에는 "쿠키가 없어서 로그인이 풀린 것"과
 # 똑같이(에러 문구 없이 로그인 화면으로 이동) 보인다 — 배포 프론트 주소가
@@ -102,6 +101,18 @@ _DEV_CORS_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://192.168.0.191:5173",
 ]
+# 2026-09-13: EC2(54.180.95.40) 프론트 주소를 코드에 직접 추가 — 서버 .env에
+# EXTRA_CORS_ORIGINS를 수동으로 넣어야 하는 방식은 SSH 키 보유자에게 매번
+# 의존해야 해서, git push만으로 CI/CD가 자동 반영하도록 소스에 직접 반영한다
+# (실측: 포트 80="ktp-frondend-react", 유저용 프론트 — /trip/confirm 등에서
+# CORS 에러 재현됨. 포트 8081="FAN:GO Admin", 관리자 패널 — 같은 백엔드를
+# 호출할 가능성을 대비해 함께 등록).
+_PROD_CORS_ORIGINS = [
+    "http://ec2-54-180-95-40.ap-northeast-2.compute.amazonaws.com",
+    "http://ec2-54-180-95-40.ap-northeast-2.compute.amazonaws.com:8081",
+]
+# .env의 EXTRA_CORS_ORIGINS(쉼표 구분)도 계속 지원 — 코드 재배포 없이 추가로
+# 필요한 origin이 생기면 여전히 이 방법으로도 넣을 수 있다(하위호환 유지).
 _EXTRA_CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv("EXTRA_CORS_ORIGINS", "").split(",")
@@ -110,7 +121,7 @@ _EXTRA_CORS_ORIGINS = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_DEV_CORS_ORIGINS + _EXTRA_CORS_ORIGINS,
+    allow_origins=_DEV_CORS_ORIGINS + _PROD_CORS_ORIGINS + _EXTRA_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
