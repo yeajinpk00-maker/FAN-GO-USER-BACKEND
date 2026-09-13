@@ -75,6 +75,16 @@ def _roc(rank, n):
 
 
 def _to_min(t):
+    # 2026-09-13 방어 추가: 빈 문자열/None이 그대로 들어오면 "invalid literal for
+    # int() with base 10: ''"라는 원인 불명확한 ValueError로 크래시했다(실제 사례:
+    # event_op_hour.open_tm/close_tm=""). 이 함수 자체는 "휴무" 같은 도메인 의미를
+    # 몰라서 여기서 값을 임의로 대체하지 않는다(호출부마다 의미가 다름 — 예:
+    # build_open_matrix()는 빈 문자열을 "휴무"로 정규화한 뒤 여기 도달하기 전에
+    # 걸러내고, 콘서트 시작시각처럼 정말 값이 있어야 하는 곳은 계속 실패해야 함).
+    # 대신 무슨 값이 왜 실패했는지 바로 알 수 있게 에러 메시지만 명확히 한다.
+    if not t or ":" not in str(t):
+        raise ValueError(f"_to_min()에 시간 형식이 아닌 값이 들어옴: {t!r} — 호출부에서 "
+                          "빈 값/휴무 등 도메인 의미를 먼저 처리했어야 함")
     h, m = map(int, str(t).split(":"))
     return h * 60 + m
 
@@ -660,6 +670,21 @@ def build_open_matrix(events, date_list, business_hours_by_event, day_start_min,
                 open_matrix[i, d] = True
                 continue
             open_tm, close_tm = day_hours[weekday_kr]
+            # 2026-09-13 버그 수정: open_tm/close_tm이 NULL이 아니라 빈 문자열("")인
+            # 행이 실DB에 17건 있었다(_to_min("") -> ValueError로 500 크래시). 전수
+            # 확인 결과 전부 open_tm=close_tm=""로 "쌍으로만" 나타나고(한쪽만 빈 경우
+            # 0건), 전부 "여행지"(ctg_type_no=3 — 국립중앙박물관/국립현대미술관 과천/
+            # 국립아시아문화전당 등 국공립 박물관·전시관류) 카테고리다. 같은 event_no의
+            # 다른 요일엔 전부 정상 "HH:MM" 값이 있는데 딱 하루(주로 월요일)만 비어
+            # 있어서 — 실제로 월요일 휴관인 국공립 박물관들과 일치 — 데이터 오류가
+            # 아니라 "그 요일 휴관"을 NULL 대신 ""로 인코딩한 정상 값으로 판단했다.
+            # 기존 "open_tm/close_tm 둘 다 None = 진짜 휴무" 분기가 그대로 처리하도록
+            # 빈 문자열을 None으로 정규화한다(한쪽만 빈 케이스는 실측 0건이지만 방어적으로
+            # 각각 정규화 — "한쪽만 None"이면 기존 로직대로 판단보류·통과 처리된다).
+            if open_tm == "":
+                open_tm = None
+            if close_tm == "":
+                close_tm = None
             if open_tm is None and close_tm is None:
                 # 행은 있는데 둘 다 NULL — 진짜 휴무.
                 open_matrix[i, d] = False
