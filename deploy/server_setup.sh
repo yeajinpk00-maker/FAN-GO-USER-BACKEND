@@ -16,10 +16,21 @@ python3.11 -m venv .venv
 
 echo "== 3. .env 확인 =="
 if [ ! -f .env ]; then
-  echo "!! .env 가 없다. DATABASE_URL 등을 채운 .env 를 먼저 만들고 다시 실행하라." >&2
-  echo "   예: DATABASE_URL=mysql+pymysql://user:pass@<RDS 엔드포인트>:3306/team2" >&2
+  echo "!! .env 가 없다. 아래 값을 채운 .env 를 먼저 만들고 다시 실행하라." >&2
+  echo "   DATABASE_URL=mysql+pymysql://user:pass@<RDS 엔드포인트>:3306/team2" >&2
+  echo "   KAKAO_REST_API_KEY=<카카오 REST API 키>   # 없으면 '동선 만들기'만 조용히 실패함(서버 기동/헬스체크는 정상)" >&2
+  echo "   SECRET_KEY=<임의의 긴 랜덤 문자열>          # JWT 서명용, 운영 환경 필수" >&2
   exit 1
 fi
+
+echo "== 3-1. 필수 환경변수 존재 여부만 확인(값은 출력하지 않음) =="
+for var in DATABASE_URL KAKAO_REST_API_KEY SECRET_KEY; do
+  if grep -q "^${var}=." .env; then
+    echo "  - ${var}: 있음"
+  else
+    echo "  - ${var}: !! 없음 또는 빈 값 (.env에 ${var}=... 추가 필요)"
+  fi
+done
 
 echo "== 4. DB 연결 스모크 테스트 =="
 ./.venv/bin/python -c "

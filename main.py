@@ -2,7 +2,14 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv()를 인자 없이 호출하면 python-dotenv가 "현재 작업 디렉터리(CWD)"에서 위로
+# 올라가며 .env를 찾는다(find_dotenv 기본 동작) — 이 스크립트 파일 위치가 아니다.
+# 배포 프로세스가 프로젝트 루트가 아닌 다른 CWD에서 기동되면(예: systemd/pm2에
+# WorkingDirectory 미지정, 절대경로로 uvicorn만 실행 등) .env를 못 찾아도 예외 없이
+# 조용히 무시되고, 이후 모든 os.getenv(...)가 None을 반환한다.
+# → 실행 파일(main.py) 기준 절대경로로 명시해 CWD와 무관하게 항상 같은 .env를 읽도록 고정.
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(_ENV_PATH)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

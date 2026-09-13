@@ -8,7 +8,9 @@ User=ec2-user
 Group=ec2-user
 WorkingDirectory=/home/ec2-user/FANGO_USER
 Environment=PYTHONUNBUFFERED=1
-# .env 는 database.py 가 WorkingDirectory 기준으로 읽는다.
+# .env 는 main.py의 load_dotenv()가 WorkingDirectory(이 항목) 기준 절대경로로 읽는다.
+# (database.py는 load_dotenv()를 호출하지 않음 — main.py가 먼저 로드해둔
+#  os.environ 값을 os.getenv()로 읽기만 함)
 ExecStart=/home/ec2-user/FANGO_USER/.venv/bin/gunicorn -c deploy/gunicorn_conf.py main:app
 Restart=always
 RestartSec=3
