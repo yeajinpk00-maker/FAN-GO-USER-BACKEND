@@ -49,8 +49,23 @@ DB 연결 스모크 테스트(`server_setup.sh` 4단계)는 `DATABASE_URL`만 �
 | `KAKAO_REST_API_KEY` | 카카오모빌리티 길찾기(동선 만들기 이동시간 계산) | "동선 만들기"가 `KAKAO_REST_API_KEY가 .env에 설정되어 있지 않습니다" 에러로 실패. 서버는 정상 기동되고 헬스체크도 통과하므로 눈치채기 어려움 |
 | `SECRET_KEY` | JWT 서명 키 | 코드 기본값(`dev-only-change-me`)으로 대체되어 기동은 되지만, 운영 환경에서 이 기본값 그대로 두면 안 됨(보안 위험) |
 | `COOKIE_SECURE` | 배포(HTTPS) 환경이면 `true` | 기본 `false` — HTTPS 배포인데 `true`로 안 바꾸면 로그인 쿠키 관련 문제 가능 |
+| `EXTRA_CORS_ORIGINS` | 배포 프론트 주소(쉼표로 여러 개 가능) | 비어 있으면 로컬 개발 주소만 허용됨 — 배포 프론트 origin이 여기 없으면 브라우저가 로그인 API 응답을 CORS로 막고, 그 결과가 프론트에는 "에러 문구 없이 로그인 화면으로 돌아감"으로 보임(로그인 만료처럼 보이는 버그의 흔한 원인) |
 
 예: `DATABASE_URL=mysql+pymysql://user:pass@<RDS 엔드포인트>:3306/team2`
+
+### 참고: 프론트/백엔드가 서로 다른 도메인이면 쿠키 로그인 자체가 막힐 수 있음
+
+지금 백엔드는 nginx 없이 `http://54.180.95.40:8000`을 직접 쓴다(HTTPS 아님).
+로그인 쿠키는 `SameSite=Lax`로 내려간다 — 이 설정은 프론트와 백엔드가
+"같은 사이트"(포트만 다른 정도)일 때는 문제없지만, 프론트가 **완전히 다른
+도메인**(예: Vercel/Netlify에 올라간 배포 프론트)에서 이 백엔드를 호출하는
+"cross-site" 구조라면, `SameSite=Lax` 쿠키는 로그인 직후 응답에는 저장되어도
+그 다음 "로그인 상태 확인" 같은 XHR/fetch 요청에는 브라우저가 **아예 실어
+보내지 않는다**(개발자도구에 쿠키는 보이는데 요청 헤더에는 안 실리는 형태로
+관측됨). 이 경우 정석 해결책은 `SameSite=None; Secure`인데, `Secure`는
+HTTPS가 있어야 동작하므로 **백엔드에 TLS(도메인 + nginx/인증서)를 먼저
+붙여야** 근본적으로 해결된다 — 프론트/백엔드 도메인 구조가 어떻게 되어
+있는지부터 확인 필요.
 
 ## 2. GitHub Secrets 등록 (저장소 Settings → Secrets and variables → Actions)
 

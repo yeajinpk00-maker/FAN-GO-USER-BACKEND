@@ -91,13 +91,26 @@ seed_defaults()
 app = FastAPI()
 app.include_router(auth_router)
 
+# 로컬 개발 서버 주소(고정) + .env의 EXTRA_CORS_ORIGINS(쉼표 구분)로 배포 프론트
+# 주소를 코드 수정/재배포 없이 추가할 수 있게 함.
+# allow_credentials=True 조합에서는 이 목록에 없는 origin은 브라우저가 응답을
+# CORS로 막아버리고, 그 결과가 프론트 쪽에는 "쿠키가 없어서 로그인이 풀린 것"과
+# 똑같이(에러 문구 없이 로그인 화면으로 이동) 보인다 — 배포 프론트 주소가
+# 아래 목록에 없으면 이게 원인일 가능성이 높음.
+_DEV_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://192.168.0.191:5173",
+]
+_EXTRA_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("EXTRA_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://192.168.0.191:5173",
-    ],  # 프론트 개발 서버 주소
+    allow_origins=_DEV_CORS_ORIGINS + _EXTRA_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
