@@ -1,6 +1,13 @@
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
+
+# 프로세스가 실제로 언제 기동됐는지(모듈이 처음 임포트된 시각) — 워커 1개 고정
+# (deploy/gunicorn_conf.py) 구조라 이 값이 곧 "마지막 재시작 시각"과 사실상 같다.
+# /health/env가 .env 파일 수정 시각과 비교해 "재시작이 .env 수정 이후인지"를
+# SSH 없이 원격으로 판단할 수 있게 해준다.
+_PROCESS_STARTED_AT = datetime.now().isoformat()
 
 # load_dotenv()를 인자 없이 호출하면 python-dotenv가 "현재 작업 디렉터리(CWD)"에서 위로
 # 올라가며 .env를 찾는다(find_dotenv 기본 동작) — 이 스크립트 파일 위치가 아니다.
@@ -143,6 +150,44 @@ def _start_batch_scheduler():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/health/env")
+async def health_env():
+    """값은 절대 노출하지 않고 존재 여부/길이/타임스탬프만 반환하는 진단 엔드포인트
+    (2026-09-13 신규) — "KAKAO_REST_API_KEY가 .env에 설정되어 있지 않습니다" 류
+    문제를 SSH 접근 없이도 원격으로 확인하려고 추가했다. 인증 없음 — 반환값에
+    민감정보(값 자체)가 전혀 없어 노출 위험이 없다(길이만 알 수 있음, 값은 알 수 없음).
+
+    env_file_path: main.py가 실제로 읽으려 시도한 .env 절대경로(로컬/배포 환경이
+      다른 위치를 참조하고 있는지 확인용).
+    env_file_modified_at: 그 파일이 마지막으로 수정된 시각.
+    process_started_at: 이 프로세스가 기동된 시각(워커 1개 고정 구조라 사실상
+      "마지막 재시작 시각"과 동일) — env_file_modified_at보다 이전이면, .env를
+      고친 뒤 재시작을 안 한 것이 원인일 가능성이 높다.
+    vars: 각 환경변수의 존재 여부(present)와 길이(length)만 — 값 자체는 없음.
+    """
+    def _presence(name: str) -> dict:
+        v = os.getenv(name)
+        return {"present": bool(v), "length": len(v) if v else 0}
+
+    env_mtime = None
+    if os.path.exists(_ENV_PATH):
+        env_mtime = datetime.fromtimestamp(os.path.getmtime(_ENV_PATH)).isoformat()
+
+    return {
+        "env_file_path": _ENV_PATH,
+        "env_file_exists": os.path.exists(_ENV_PATH),
+        "env_file_modified_at": env_mtime,
+        "process_started_at": _PROCESS_STARTED_AT,
+        "vars": {
+            "DATABASE_URL": _presence("DATABASE_URL"),
+            "KAKAO_REST_API_KEY": _presence("KAKAO_REST_API_KEY"),
+            "SECRET_KEY": _presence("SECRET_KEY"),
+            "COOKIE_SECURE": _presence("COOKIE_SECURE"),
+            "EXTRA_CORS_ORIGINS": _presence("EXTRA_CORS_ORIGINS"),
+        },
+    }
 
 
 @app.get("/")
