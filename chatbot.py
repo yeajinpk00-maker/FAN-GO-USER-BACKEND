@@ -239,7 +239,6 @@ def route_intent(query: str) -> RouterDecision:
                 {"role": "user", "content": query},
             ],
             response_format={"type": "json_object"},
-            temperature=0,
         )
         parsed = json.loads(response.choices[0].message.content)
         path = parsed.get("path")
@@ -334,7 +333,6 @@ def run_function_calling(
             ],
             tools=schemas_to_offer,
             tool_choice="required",
-            temperature=0,
         )
         tool_calls = response.choices[0].message.tool_calls or []
     except Exception:
@@ -455,7 +453,6 @@ def generate_final_answer(
         response = _get_client().chat.completions.create(
             model=CHAT_MODEL,
             messages=messages,
-            temperature=0.4,
         )
         return response.choices[0].message.content, False
     except Exception as e:
@@ -544,7 +541,6 @@ def resolve_reference(query: str, referenced: dict) -> dict:
                 {"role": "user", "content": query},
             ],
             response_format={"type": "json_object"},
-            temperature=0,
         )
         parsed = json.loads(response.choices[0].message.content)
         rewritten = parsed.get("rewritten_query") or query
