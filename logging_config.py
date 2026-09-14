@@ -12,11 +12,30 @@ logs/app.log에도 append되어 나중에 다시 확인할 수 있다.
 import logging
 import logging.handlers
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 _LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 _LOG_FILE = os.path.join(_LOG_DIR, "app.log")
 
-_FORMATTER = logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+_KST = ZoneInfo("Asia/Seoul")
+
+
+class _KSTFormatter(logging.Formatter):
+    """서버(EC2)가 UTC로 돌아 로그 시각이 실제 발생 시각과 어긋나던 문제 —
+    시스템 타임존과 무관하게 항상 Asia/Seoul 기준으로 asctime을 찍는다."""
+
+    def converter(self, timestamp):
+        return datetime.fromtimestamp(timestamp, tz=_KST).timetuple()
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=_KST)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.strftime("%Y-%m-%d %H:%M:%S") + f",{int(record.msecs):03d}"
+
+
+_FORMATTER = _KSTFormatter("%(asctime)s KST %(levelname)s [%(name)s] %(message)s")
 
 _file_handler = None
 

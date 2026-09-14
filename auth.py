@@ -595,6 +595,7 @@ def list_main_events(
             Ctg.ctg_type_no == MAIN_EVENT_CTG_TYPE_NO,
             Event.artist_group_no.in_(target_group_nos),
             Event.end_dt >= today_start,
+            Event.op_status_no.in_(ALLOWED_OP_STATUS),
         )
         .order_by(Event.start_dt)
         .all()
