@@ -26,6 +26,7 @@ import security
 import travel_time_service
 from al02_pipeline import AL02Pipeline, DepotOverlapError, accoms_overlap
 from al02_policy import (
+    ALLOWED_OP_STATUS,
     CONCERT_VISIT_COUNT_PROFILES,
     TRIP_DENSITY_TO_WREL_KEY,
     VISIT_COUNT_PROFILES,
@@ -934,6 +935,19 @@ def recommend_trip_route(
     concert_event = db.query(Event).filter(Event.event_no == trip.event_no).first()
     if not concert_event:
         raise _err(status.HTTP_400_BAD_REQUEST, "여행에 연결된 이벤트를 찾을 수 없습니다.", ["event_no"])
+
+    # 2026-09-14: 콘서트(앵커 이벤트)가 종료/취소(op_status_no가 준비중/진행중이 아님)면
+    # al02_candidates.hard_filter()가 후보 목록에서 조용히 걸러내고, al02_pipeline.run()이
+    # "콘서트는 항상 포함되어야 한다"는 하드 요구를 못 채워 ValueError -> 500으로 죽는다
+    # (실 배포 로그로 확인: event_no=1422, op_status_no=3 "종료/폐업"). 코드 버그가 아니라
+    # "이미 끝난 공연으로 동선을 만들어달라"는 요청 자체가 처리 불가능한 상태이므로,
+    # pipeline까지 내려보내 500으로 죽이지 않고 여기서 바로 명확한 4xx로 막는다.
+    if int(concert_event.op_status_no) not in ALLOWED_OP_STATUS:
+        raise _err(
+            status.HTTP_409_CONFLICT,
+            "선택하신 공연이 이미 종료되었거나 취소되어 동선을 만들 수 없습니다.",
+            ["event_no"],
+        )
 
     ctg_nos = [
         row.ctg_no
