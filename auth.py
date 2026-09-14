@@ -2,6 +2,7 @@ import os
 import uuid
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import (
     APIRouter,
@@ -40,6 +41,7 @@ from models import (
     Auth,
     ChatMessage,
     ChatSession,
+    Congestion,
     Ctg,
     Event,
     EventOpHour,
@@ -64,6 +66,10 @@ from models import (
 )
 
 router = APIRouter(tags=["auth"])
+
+# congestion.weekday/hour_of_day 매칭용 "현재 시각" 계산 기준(batch.py와 동일한 방식).
+# 서버 프로세스 자체가 어느 타임존에서 도는지와 무관하게 항상 KST로 고정한다.
+KST = ZoneInfo("Asia/Seoul")
 
 # 로컬 개발(http://localhost)에서는 secure 쿠키가 전송되지 않으므로 기본은 False.
 # 배포 시 HTTPS 환경이면 .env에 COOKIE_SECURE=true 를 설정하세요.
@@ -1559,6 +1565,67 @@ def get_event_detail(event_no: int, db: Session = Depends(get_db)):
             )
             for er in reviews
         ],
+    )
+
+
+@router.get(
+    "/events/{event_no}/congestion",
+    response_model=schemas.CongestionOut,
+    tags=["trip"],
+)
+def get_event_current_congestion(event_no: int, db: Session = Depends(get_db)):
+    """행사 상세 화면의 '예상 혼잡도' — 서버가 계산한 현재 시각(KST) 기준 요일/시간대에
+    해당하는 congestion 1행을 event_no(PK)로만 조회한다(이름 매칭 없음).
+
+    congestion.weekday는 VARCHAR(2) "1"~"7"(ISO-8601, 1=월) — Python의
+    date.isoweekday()가 정확히 이 값과 동일한 규칙(월=1 ... 일=7)이라 그대로 문자열
+    변환해 쓴다. hour_of_day는 TINYINT 0~23으로 datetime.hour와 그대로 일치.
+    (db_data_dictionary.md의 congestion 섹션 실측 기준 — event_op_hour.op_dt처럼
+    한글 요일 문자열이 아니므로 혼동 주의.)
+
+    해당 조합의 행이 없을 때(다른 팀이 관리하는 배치 데이터라 결측 가능) 404를 쓰지
+    않는다 — event_no 자체는 존재하므로, event_op_hour 결측 시 business_hours를
+    has_data=False로 내려주는 기존 컨벤션(BusinessHoursOut)과 동일하게 200 +
+    has_data=False로 응답한다. event_no 자체가 없을 때만 404(다른 단건 조회 API와 동일)."""
+    event = db.query(Event).filter(Event.event_no == event_no).first()
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="존재하지 않는 이벤트입니다."
+        )
+
+    now_kst = datetime.now(KST)
+    weekday = str(now_kst.isoweekday())  # 월=1 ... 일=7, congestion.weekday와 동일 규칙
+    hour_of_day = now_kst.hour  # 0~23
+
+    row = (
+        db.query(Congestion)
+        .filter(
+            Congestion.event_no == event_no,
+            Congestion.weekday == weekday,
+            Congestion.hour_of_day == hour_of_day,
+        )
+        .first()
+    )
+
+    if not row:
+        return schemas.CongestionOut(
+            weekday=weekday,
+            hour_of_day=hour_of_day,
+            has_data=False,
+        )
+
+    return schemas.CongestionOut(
+        weekday=weekday,
+        hour_of_day=hour_of_day,
+        has_data=True,
+        cong_level=row.cong_level,
+        cong_label=(
+            schemas.CONGESTION_LEVEL_LABELS.get(row.cong_level)
+            if row.cong_level is not None
+            else None
+        ),
+        day_avg=float(row.day_avg) if row.day_avg is not None else None,
+        week_avg=float(row.week_avg) if row.week_avg is not None else None,
     )
 
 

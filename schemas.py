@@ -177,6 +177,25 @@ class VisitFeedbackOut(BaseModel):
     liked: bool
 
 
+# cong_level(TINYINT, congestion 테이블 DB GENERATED 컬럼) 정수값 -> 프론트 표시 라벨.
+# db_data_dictionary.md 기준: 0한산 1보통 2혼잡 3매우혼잡.
+CONGESTION_LEVEL_LABELS = {0: "한산", 1: "보통", 2: "혼잡", 3: "매우혼잡"}
+
+
+class CongestionOut(BaseModel):
+    """GET /events/{event_no}/congestion 응답 — 서버가 계산한 '현재 시각(KST)' 기준
+    요일/시간대에 해당하는 congestion 1행. has_data=False면 그 event_no+weekday+
+    hour_of_day 조합 행 자체가 없다는 뜻(BusinessHoursOut의 has_data 패턴과 동일)."""
+
+    weekday: str  # congestion.weekday 원본 형식 그대로: "1"~"7"(ISO-8601, 1=월)
+    hour_of_day: int  # 0~23
+    has_data: bool
+    cong_level: int | None = None  # 0한산 1보통 2혼잡 3매우혼잡 (congestion.cong_level 그대로)
+    cong_label: str | None = None  # cong_level -> 한글 라벨(프론트가 그대로 표시용)
+    day_avg: float | None = None
+    week_avg: float | None = None
+
+
 class BusinessHoursOut(BaseModel):
     has_data: bool  # False면 event_op_hour에 이 장소 자체가 없음(정보 없음, 휴무 아님)
     is_closed: bool  # True면 그 요일 행은 있는데 open_tm/close_tm이 둘 다 NULL(휴무)
