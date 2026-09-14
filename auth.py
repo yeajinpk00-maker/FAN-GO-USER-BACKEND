@@ -624,6 +624,17 @@ def _err(status_code: int, message: str, fields: list[str], **extra):
     return HTTPException(status_code=status_code, detail={"message": message, "fields": fields, **extra})
 
 
+def _delete_trip_cascade(db: Session, trip_no: int) -> None:
+    """POST /trips가 만든 trip + 자식 행(accom/trip_interest/rute_artist_select)을
+    통째로 지운다. trip_route/trip_route_event는 이 시점(recommend 단계)엔 아직
+    생성 전이라(POST /trip-routes가 그 다음 호출) 대상이 아니다."""
+    db.query(Accom).filter(Accom.trip_no == trip_no).delete()
+    db.query(TripInterest).filter(TripInterest.trip_no == trip_no).delete()
+    db.query(RuteArtistSelect).filter(RuteArtistSelect.trip_no == trip_no).delete()
+    db.query(Trip).filter(Trip.trip_no == trip_no).delete()
+    db.commit()
+
+
 @router.post("/trips", response_model=schemas.TripOut, status_code=status.HTTP_201_CREATED, tags=["trip"])
 def create_trip(
     payload: schemas.TripCreateRequest,
@@ -917,230 +928,243 @@ def recommend_trip_route(
     if trip.user_no != current_user.user_no:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="본인의 여행이 아닙니다.")
 
-    wrel_key = TRIP_DENSITY_TO_WREL_KEY.get(trip.trip_density_no)
-    if wrel_key is None:
-        raise _err(
-            status.HTTP_400_BAD_REQUEST,
-            "여행에 동선 스타일(trip_density_no)이 설정되어 있지 않습니다. 먼저 스타일을 선택해주세요.",
-            ["trip_density_no"],
-        )
-    w_rel = WREL_PROFILES[wrel_key]["W_rel"]
-    # 2026-09-10: A/B/C 밀도 프로파일의 방문 개수 범위(al02_policy.VISIT_COUNT_PROFILES) —
-    # W_rel과 같은 wrel_key(trip_density_no 1/2/3 -> A/B/C)로 뽑아 그대로 같이 넘긴다.
-    visit_profile = VISIT_COUNT_PROFILES[wrel_key]
-    # 2026-09-10 정정: 공연일도 이제 프로파일별 범위(공연 포함 총 개수) — 이전엔 공연일
-    # 고정값이라 이 조회가 없었음.
-    concert_visit_profile = CONCERT_VISIT_COUNT_PROFILES[wrel_key]
-
-    # trip.event_no는 NOT NULL FK라 정상 흐름에선 항상 존재 — 없으면 방어적으로 400.
-    concert_event = db.query(Event).filter(Event.event_no == trip.event_no).first()
-    if not concert_event:
-        raise _err(status.HTTP_400_BAD_REQUEST, "여행에 연결된 이벤트를 찾을 수 없습니다.", ["event_no"])
-
-    # 2026-09-14: 콘서트(앵커 이벤트)가 종료/취소(op_status_no가 준비중/진행중이 아님)면
-    # al02_candidates.hard_filter()가 후보 목록에서 조용히 걸러내고, al02_pipeline.run()이
-    # "콘서트는 항상 포함되어야 한다"는 하드 요구를 못 채워 ValueError -> 500으로 죽는다
-    # (실 배포 로그로 확인: event_no=1422, op_status_no=3 "종료/폐업"). 코드 버그가 아니라
-    # "이미 끝난 공연으로 동선을 만들어달라"는 요청 자체가 처리 불가능한 상태이므로,
-    # pipeline까지 내려보내 500으로 죽이지 않고 여기서 바로 명확한 4xx로 막는다.
-    if int(concert_event.op_status_no) not in ALLOWED_OP_STATUS:
-        raise _err(
-            status.HTTP_409_CONFLICT,
-            "선택하신 공연이 이미 종료되었거나 취소되어 동선을 만들 수 없습니다.",
-            ["event_no"],
-        )
-
-    ctg_nos = [
-        row.ctg_no
-        for row in db.query(TripInterest)
-        .filter(TripInterest.trip_no == trip_no)
-        .order_by(TripInterest.rank)
-        .all()
-    ]
-    artist_nos = [
-        row.artist_no
-        for row in db.query(RuteArtistSelect.artist_no)
-        .filter(RuteArtistSelect.trip_no == trip_no)
-        .all()
-    ]
-
-    # 숙소(depot) — 2026-09-10: 등록된 숙소 전부를 가져온다(체크인 이른 순).
-    # 이전엔 첫 번째 숙소 1곳만 트립 전체 기간에 고정으로 썼음(버그) — 이제
-    # AL02Pipeline.day_depots()가 날짜별로 그날 체크인~체크아웃이 유효한 숙소를 고른다
-    # (§4.2 우선순위: 1순위 공연 마지막 방문 / 2순위 첫날 출발핀·마지막날 도착핀 / 기본값
-    # 그날 유효한 숙소 — al02_pipeline.pick_depot_accom 참고).
-    accoms_all = (
-        db.query(Accom)
-        .filter(Accom.trip_no == trip_no)
-        .order_by(Accom.check_in_dt, Accom.accom_no)
-        .all()
-    )
-    accoms = [a for a in accoms_all if a.accom_lat is not None and a.accom_lon is not None]
-    if not accoms:
-        raise _err(
-            status.HTTP_400_BAD_REQUEST,
-            "좌표가 등록된 숙소가 없어 동선을 만들 수 없습니다.",
-            ["accoms"],
-        )
-    accom = accoms[0]  # S0 후보 검색 반경 중심 등 "대표 숙소 1곳"이 필요한 곳에서 그대로 사용
-    accoms_input = [
-        {
-            "accom_no": a.accom_no, "lat": float(a.accom_lat), "lon": float(a.accom_lon),
-            "check_in_dt": a.check_in_dt.isoformat() if a.check_in_dt else None,
-            "check_out_dt": a.check_out_dt.isoformat() if a.check_out_dt else None,
-        }
-        for a in accoms
-    ]
-
-    user_input = {
-        "trip_start": trip.start_dt.isoformat(),
-        "trip_end": trip.end_dt.isoformat(),
-        "artist_nos": artist_nos,
-        # rute_artist_select는 그룹 전체 선택도 그 시점 멤버 전원을 개별 row로 풀어서 저장하므로
-        # (POST /trips 참고) group_nos는 항상 비워도 된다 — build_selected_group_nos가
-        # artist_nos + artist_group_map만으로 소속 그룹을 그대로 복원한다.
-        "group_nos": [],
-        "ctg_nos": ctg_nos,
-        "concert": {
-            "event_no": trip.event_no,
-            "event_date": trip.event_date.isoformat(),
-            "start_time": (
-                concert_event.start_dt.strftime("%H:%M") if concert_event.start_dt else "19:00"
-            ),
-        },
-        "lodging": {"latitude": float(accom.accom_lat), "longitude": float(accom.accom_lon)},
-        "accoms": accoms_input,
-    }
-    # 출발핀/도착핀 — trip 생성 시 저장된 값이 있으면 그대로 태운다(al02_pipeline이
-    # 이미 지원하는 필드라 값이 있는데 빼면 오히려 정확도가 떨어짐).
-    if trip.start_place_lat is not None and trip.start_place_lon is not None:
-        user_input["start_pin"] = {
-            "latitude": float(trip.start_place_lat), "longitude": float(trip.start_place_lon)
-        }
-    if trip.end_place_lat is not None and trip.end_place_lon is not None:
-        user_input["end_pin"] = {
-            "latitude": float(trip.end_place_lat), "longitude": float(trip.end_place_lon)
-        }
-    # 하루 활동 시간대(2026-09-10 추가) — trip.start_tm/end_tm은 트립 전체에 적용되는
-    # 단일 "하루 시작~종료 시각"이고(날짜 부분은 무시, 시:분만 씀), DB엔 DATETIME으로
-    # 저장돼 있다. 여태 여기서 안 읽어서 al02_pipeline이 계속 기본값(09:00~21:00)만
-    # 쓰고 있었음 — S3 영업시간 필터(build_open_matrix)가 실제로 이 값과 비교해야 해서
-    # 이번에 같이 연결한다. 둘 중 하나라도 없으면(트립 생성 시 안 받은 레거시 데이터)
-    # 기존 기본값 그대로 둔다.
-    if trip.start_tm is not None:
-        user_input["day_start_time"] = trip.start_tm.strftime("%H:%M")
-    if trip.end_tm is not None:
-        user_input["day_end_time"] = trip.end_tm.strftime("%H:%M")
-
-    # 이동시간 실 API 연동(2026-09-09): "고정 지점"(숙소 각각/출발핀/도착핀)마다 후보
-    # 이벤트까지의 실제 이동시간을 미리 조회해 AL02Pipeline.run()에 넘긴다. role 키
-    # ("depot:{accom_no}"/"start_pin"/"end_pin")는 al02_pipeline.run()이 augment_matrix에
-    # 넘기는 extra_points의 role과 반드시 일치해야 한다 — al02_candidates.
-    # build_extra_travel_minutes() 참고. 2026-09-10: 숙소가 여러 곳이면 전부 넣는다
-    # (다중 숙소 depot 지원 — travel_time_cache는 accom_no별로 캐시하므로 자연스럽게 지원됨).
-    extra_origins = {
-        f"depot:{a['accom_no']}": {"origin_type": "accom", "origin_no": a["accom_no"],
-                                    "lat": a["lat"], "lon": a["lon"]}
-        for a in accoms_input
-    }
-    if "start_pin" in user_input:
-        extra_origins["start_pin"] = {
-            "origin_type": "trip_start_pin", "origin_no": trip_no,
-            "lat": user_input["start_pin"]["latitude"], "lon": user_input["start_pin"]["longitude"],
-        }
-    if "end_pin" in user_input:
-        extra_origins["end_pin"] = {
-            "origin_type": "trip_end_pin", "origin_no": trip_no,
-            "lat": user_input["end_pin"]["latitude"], "lon": user_input["end_pin"]["longitude"],
-        }
-
     try:
-        candidates, events, matrix = al02_candidates.fetch_candidates(
-            db,
-            user_input,
-            lodging_lat=user_input["lodging"]["latitude"],
-            lodging_lon=user_input["lodging"]["longitude"],
-            include_tier2=ENABLE_DIVERSITY_TIERS,
-        )
-        warning = "insufficient_candidates" if len(candidates) < 3 else None
-
-        extra_travel_minutes = al02_candidates.build_extra_travel_minutes(
-            db, extra_origins, events,
-        )
-        # S3 영업시간 필터(2026-09-10 신규) — 후보 event_no 전부에 대해 event_op_hour을
-        # 한 번에 조회해서 넘긴다. 실 사용 흐름에선 이 인자를 항상 명시적으로 넘기므로
-        # (al02_selftest.py처럼 None을 넘겨 필터를 끄는 경로가 아님) 데이터가 없는
-        # 이벤트는 al02_pipeline.build_open_matrix()가 그대로 휴무 취급한다.
-        business_hours_by_event = al02_candidates.fetch_business_hours(
-            db, [ev["event_no"] for ev in events],
-        )
-
-        engine = AL02Pipeline()
-        result = engine.run(candidates, matrix, events, user_input, W_rel=w_rel,
-                             extra_travel_minutes=extra_travel_minutes,
-                             business_hours_by_event=business_hours_by_event,
-                             visit_min=visit_profile["min"], visit_max=visit_profile["max"],
-                             concert_visit_min=concert_visit_profile["min"],
-                             concert_visit_max=concert_visit_profile["max"],
-                             # 2026-09-11~12: 다양성 제약 스위치 — enable_hard_dedup(동일
-                             # 이벤트/브랜드/쇼핑 전체-여행 1회 + 하루 동일 ctg_no 최대
-                             # 1곳)은 항상 켜고, enable_diversity(Tier2 개방 + dense 3차
-                             # 완화)는 이 파일 상단의 ENABLE_DIVERSITY_TIERS로 제어한다
-                             # (al02_selftest.py 등 합성 데이터 호출은 둘 다 안 넘겨서
-                             # 영향 없음).
-                             enable_hard_dedup=ENABLE_HARD_DEDUP,
-                             enable_diversity=ENABLE_DIVERSITY_TIERS, density_profile=wrel_key)
-    except travel_time_service.TravelTimeQuotaExceeded as e:
-        # 일 900건 하드 락 — haversine 등으로 폴백하지 않고 명확히 실패 처리(요청 사양).
-        raise _err(status.HTTP_503_SERVICE_UNAVAILABLE, str(e), [])
-    except travel_time_service.TravelTimeAPIError as e:
-        raise _err(status.HTTP_502_BAD_GATEWAY, f"이동시간 조회에 실패했습니다: {e}", [])
-    except DepotOverlapError as e:
-        # 숙소 체크인~체크아웃 기간이 겹치는 데이터(정책 위반) — POST /trips가 2026-09-10부터
-        # 새로 막지만, 그 이전에 생성된 레거시 데이터는 여전히 여기서 걸릴 수 있다.
-        # 조용히 하나를 골라 넘어가지 않고 500으로 명확히 실패 처리(al02_pipeline.
-        # pick_depot_accom 참고) — 클라이언트 요청 자체는 잘못이 없어 4xx가 아니라 5xx.
-        raise _err(status.HTTP_500_INTERNAL_SERVER_ERROR, str(e), ["accoms"])
-
-    # 2026-09-12: Tier2(+3차 완화)까지 다 쓰고도 목표를 못 채운 날짜가 있으면(작업지시
-    # 6번) "insufficient_candidates"(후보 자체가 3개 미만)보다 더 구체적인 이 코드를
-    # 우선한다 — 둘 다 해당될 수 있는 상황에서 프론트가 "왜 부족한지"를 더 정확히
-    # 알 수 있게. enable_diversity가 꺼져 있으면(diversity가 None이거나 그 필드가
-    # False) 기존 동작(insufficient_candidates만) 그대로다.
-    if result.get("diversity") and result["diversity"].get("insufficient_diverse_candidates"):
-        warning = "insufficient_diverse_candidates"
-
-    # 공연이 실제로 어느 날의 schedule에도 안 실렸으면(마감 전 도착 불가 + 재배정으로도 실패,
-    # al02_pipeline.s4_solve_fallback이 공연만 남기고도 포기한 경우) 200으로 어설프게
-    # 돌려주지 않고 422로 명확히 알린다.
-    concert_scheduled = any(s["is_concert"] for day in result["days"] for s in day["schedule"])
-    if not concert_scheduled:
-        raise _err(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "공연 시작 전까지 도착 가능한 동선을 만들 수 없습니다.",
-            [],
-        )
-
-    response = schemas.TripRecommendOut(
-        trip_no=trip_no,
-        scoring_policy=result["scoring_policy"],
-        summary=schemas.RecommendSummaryOut(**result["summary"]),
-        days=[
-            schemas.RecommendDayOut(
-                trip_route_no=None,
-                visit_day=day["day_index"] + 1,  # trip_route.visit_day와 동일하게 1부터 시작
-                date=day["date"],
-                is_concert_day=day["is_concert_day"],
-                schedule=day["schedule"],
+        wrel_key = TRIP_DENSITY_TO_WREL_KEY.get(trip.trip_density_no)
+        if wrel_key is None:
+            raise _err(
+                status.HTTP_400_BAD_REQUEST,
+                "여행에 동선 스타일(trip_density_no)이 설정되어 있지 않습니다. 먼저 스타일을 선택해주세요.",
+                ["trip_density_no"],
             )
-            for day in result["days"]
-        ],
-        warning=warning,
-        diversity=(
-            schemas.RecommendDiversityOut(**result["diversity"])
-            if result.get("diversity") is not None else None
-        ),
-    )
+        w_rel = WREL_PROFILES[wrel_key]["W_rel"]
+        # 2026-09-10: A/B/C 밀도 프로파일의 방문 개수 범위(al02_policy.VISIT_COUNT_PROFILES) —
+        # W_rel과 같은 wrel_key(trip_density_no 1/2/3 -> A/B/C)로 뽑아 그대로 같이 넘긴다.
+        visit_profile = VISIT_COUNT_PROFILES[wrel_key]
+        # 2026-09-10 정정: 공연일도 이제 프로파일별 범위(공연 포함 총 개수) — 이전엔 공연일
+        # 고정값이라 이 조회가 없었음.
+        concert_visit_profile = CONCERT_VISIT_COUNT_PROFILES[wrel_key]
+
+        # trip.event_no는 NOT NULL FK라 정상 흐름에선 항상 존재 — 없으면 방어적으로 400.
+        concert_event = db.query(Event).filter(Event.event_no == trip.event_no).first()
+        if not concert_event:
+            raise _err(status.HTTP_400_BAD_REQUEST, "여행에 연결된 이벤트를 찾을 수 없습니다.", ["event_no"])
+
+        # 2026-09-14: 콘서트(앵커 이벤트)가 종료/취소(op_status_no가 준비중/진행중이 아님)면
+        # al02_candidates.hard_filter()가 후보 목록에서 조용히 걸러내고, al02_pipeline.run()이
+        # "콘서트는 항상 포함되어야 한다"는 하드 요구를 못 채워 ValueError -> 500으로 죽는다
+        # (실 배포 로그로 확인: event_no=1422, op_status_no=3 "종료/폐업"). 코드 버그가 아니라
+        # "이미 끝난 공연으로 동선을 만들어달라"는 요청 자체가 처리 불가능한 상태이므로,
+        # pipeline까지 내려보내 500으로 죽이지 않고 여기서 바로 명확한 4xx로 막는다.
+        if int(concert_event.op_status_no) not in ALLOWED_OP_STATUS:
+            raise _err(
+                status.HTTP_409_CONFLICT,
+                "선택하신 공연이 이미 종료되었거나 취소되어 동선을 만들 수 없습니다.",
+                ["event_no"],
+            )
+
+        ctg_nos = [
+            row.ctg_no
+            for row in db.query(TripInterest)
+            .filter(TripInterest.trip_no == trip_no)
+            .order_by(TripInterest.rank)
+            .all()
+        ]
+        artist_nos = [
+            row.artist_no
+            for row in db.query(RuteArtistSelect.artist_no)
+            .filter(RuteArtistSelect.trip_no == trip_no)
+            .all()
+        ]
+
+        # 숙소(depot) — 2026-09-10: 등록된 숙소 전부를 가져온다(체크인 이른 순).
+        # 이전엔 첫 번째 숙소 1곳만 트립 전체 기간에 고정으로 썼음(버그) — 이제
+        # AL02Pipeline.day_depots()가 날짜별로 그날 체크인~체크아웃이 유효한 숙소를 고른다
+        # (§4.2 우선순위: 1순위 공연 마지막 방문 / 2순위 첫날 출발핀·마지막날 도착핀 / 기본값
+        # 그날 유효한 숙소 — al02_pipeline.pick_depot_accom 참고).
+        accoms_all = (
+            db.query(Accom)
+            .filter(Accom.trip_no == trip_no)
+            .order_by(Accom.check_in_dt, Accom.accom_no)
+            .all()
+        )
+        accoms = [a for a in accoms_all if a.accom_lat is not None and a.accom_lon is not None]
+        if not accoms:
+            raise _err(
+                status.HTTP_400_BAD_REQUEST,
+                "좌표가 등록된 숙소가 없어 동선을 만들 수 없습니다.",
+                ["accoms"],
+            )
+        accom = accoms[0]  # S0 후보 검색 반경 중심 등 "대표 숙소 1곳"이 필요한 곳에서 그대로 사용
+        accoms_input = [
+            {
+                "accom_no": a.accom_no, "lat": float(a.accom_lat), "lon": float(a.accom_lon),
+                "check_in_dt": a.check_in_dt.isoformat() if a.check_in_dt else None,
+                "check_out_dt": a.check_out_dt.isoformat() if a.check_out_dt else None,
+            }
+            for a in accoms
+        ]
+
+        user_input = {
+            "trip_start": trip.start_dt.isoformat(),
+            "trip_end": trip.end_dt.isoformat(),
+            "artist_nos": artist_nos,
+            # rute_artist_select는 그룹 전체 선택도 그 시점 멤버 전원을 개별 row로 풀어서 저장하므로
+            # (POST /trips 참고) group_nos는 항상 비워도 된다 — build_selected_group_nos가
+            # artist_nos + artist_group_map만으로 소속 그룹을 그대로 복원한다.
+            "group_nos": [],
+            "ctg_nos": ctg_nos,
+            "concert": {
+                "event_no": trip.event_no,
+                "event_date": trip.event_date.isoformat(),
+                "start_time": (
+                    concert_event.start_dt.strftime("%H:%M") if concert_event.start_dt else "19:00"
+                ),
+            },
+            "lodging": {"latitude": float(accom.accom_lat), "longitude": float(accom.accom_lon)},
+            "accoms": accoms_input,
+        }
+        # 출발핀/도착핀 — trip 생성 시 저장된 값이 있으면 그대로 태운다(al02_pipeline이
+        # 이미 지원하는 필드라 값이 있는데 빼면 오히려 정확도가 떨어짐).
+        if trip.start_place_lat is not None and trip.start_place_lon is not None:
+            user_input["start_pin"] = {
+                "latitude": float(trip.start_place_lat), "longitude": float(trip.start_place_lon)
+            }
+        if trip.end_place_lat is not None and trip.end_place_lon is not None:
+            user_input["end_pin"] = {
+                "latitude": float(trip.end_place_lat), "longitude": float(trip.end_place_lon)
+            }
+        # 하루 활동 시간대(2026-09-10 추가) — trip.start_tm/end_tm은 트립 전체에 적용되는
+        # 단일 "하루 시작~종료 시각"이고(날짜 부분은 무시, 시:분만 씀), DB엔 DATETIME으로
+        # 저장돼 있다. 여태 여기서 안 읽어서 al02_pipeline이 계속 기본값(09:00~21:00)만
+        # 쓰고 있었음 — S3 영업시간 필터(build_open_matrix)가 실제로 이 값과 비교해야 해서
+        # 이번에 같이 연결한다. 둘 중 하나라도 없으면(트립 생성 시 안 받은 레거시 데이터)
+        # 기존 기본값 그대로 둔다.
+        if trip.start_tm is not None:
+            user_input["day_start_time"] = trip.start_tm.strftime("%H:%M")
+        if trip.end_tm is not None:
+            user_input["day_end_time"] = trip.end_tm.strftime("%H:%M")
+
+        # 이동시간 실 API 연동(2026-09-09): "고정 지점"(숙소 각각/출발핀/도착핀)마다 후보
+        # 이벤트까지의 실제 이동시간을 미리 조회해 AL02Pipeline.run()에 넘긴다. role 키
+        # ("depot:{accom_no}"/"start_pin"/"end_pin")는 al02_pipeline.run()이 augment_matrix에
+        # 넘기는 extra_points의 role과 반드시 일치해야 한다 — al02_candidates.
+        # build_extra_travel_minutes() 참고. 2026-09-10: 숙소가 여러 곳이면 전부 넣는다
+        # (다중 숙소 depot 지원 — travel_time_cache는 accom_no별로 캐시하므로 자연스럽게 지원됨).
+        extra_origins = {
+            f"depot:{a['accom_no']}": {"origin_type": "accom", "origin_no": a["accom_no"],
+                                        "lat": a["lat"], "lon": a["lon"]}
+            for a in accoms_input
+        }
+        if "start_pin" in user_input:
+            extra_origins["start_pin"] = {
+                "origin_type": "trip_start_pin", "origin_no": trip_no,
+                "lat": user_input["start_pin"]["latitude"], "lon": user_input["start_pin"]["longitude"],
+            }
+        if "end_pin" in user_input:
+            extra_origins["end_pin"] = {
+                "origin_type": "trip_end_pin", "origin_no": trip_no,
+                "lat": user_input["end_pin"]["latitude"], "lon": user_input["end_pin"]["longitude"],
+            }
+
+        try:
+            candidates, events, matrix = al02_candidates.fetch_candidates(
+                db,
+                user_input,
+                lodging_lat=user_input["lodging"]["latitude"],
+                lodging_lon=user_input["lodging"]["longitude"],
+                include_tier2=ENABLE_DIVERSITY_TIERS,
+            )
+            warning = "insufficient_candidates" if len(candidates) < 3 else None
+
+            extra_travel_minutes = al02_candidates.build_extra_travel_minutes(
+                db, extra_origins, events,
+            )
+            # S3 영업시간 필터(2026-09-10 신규) — 후보 event_no 전부에 대해 event_op_hour을
+            # 한 번에 조회해서 넘긴다. 실 사용 흐름에선 이 인자를 항상 명시적으로 넘기므로
+            # (al02_selftest.py처럼 None을 넘겨 필터를 끄는 경로가 아님) 데이터가 없는
+            # 이벤트는 al02_pipeline.build_open_matrix()가 그대로 휴무 취급한다.
+            business_hours_by_event = al02_candidates.fetch_business_hours(
+                db, [ev["event_no"] for ev in events],
+            )
+
+            engine = AL02Pipeline()
+            result = engine.run(candidates, matrix, events, user_input, W_rel=w_rel,
+                                 extra_travel_minutes=extra_travel_minutes,
+                                 business_hours_by_event=business_hours_by_event,
+                                 visit_min=visit_profile["min"], visit_max=visit_profile["max"],
+                                 concert_visit_min=concert_visit_profile["min"],
+                                 concert_visit_max=concert_visit_profile["max"],
+                                 # 2026-09-11~12: 다양성 제약 스위치 — enable_hard_dedup(동일
+                                 # 이벤트/브랜드/쇼핑 전체-여행 1회 + 하루 동일 ctg_no 최대
+                                 # 1곳)은 항상 켜고, enable_diversity(Tier2 개방 + dense 3차
+                                 # 완화)는 이 파일 상단의 ENABLE_DIVERSITY_TIERS로 제어한다
+                                 # (al02_selftest.py 등 합성 데이터 호출은 둘 다 안 넘겨서
+                                 # 영향 없음).
+                                 enable_hard_dedup=ENABLE_HARD_DEDUP,
+                                 enable_diversity=ENABLE_DIVERSITY_TIERS, density_profile=wrel_key)
+        except travel_time_service.TravelTimeQuotaExceeded as e:
+            # 일 900건 하드 락 — haversine 등으로 폴백하지 않고 명확히 실패 처리(요청 사양).
+            raise _err(status.HTTP_503_SERVICE_UNAVAILABLE, str(e), [])
+        except travel_time_service.TravelTimeAPIError as e:
+            raise _err(status.HTTP_502_BAD_GATEWAY, f"이동시간 조회에 실패했습니다: {e}", [])
+        except DepotOverlapError as e:
+            # 숙소 체크인~체크아웃 기간이 겹치는 데이터(정책 위반) — POST /trips가 2026-09-10부터
+            # 새로 막지만, 그 이전에 생성된 레거시 데이터는 여전히 여기서 걸릴 수 있다.
+            # 조용히 하나를 골라 넘어가지 않고 500으로 명확히 실패 처리(al02_pipeline.
+            # pick_depot_accom 참고) — 클라이언트 요청 자체는 잘못이 없어 4xx가 아니라 5xx.
+            raise _err(status.HTTP_500_INTERNAL_SERVER_ERROR, str(e), ["accoms"])
+
+        # 2026-09-12: Tier2(+3차 완화)까지 다 쓰고도 목표를 못 채운 날짜가 있으면(작업지시
+        # 6번) "insufficient_candidates"(후보 자체가 3개 미만)보다 더 구체적인 이 코드를
+        # 우선한다 — 둘 다 해당될 수 있는 상황에서 프론트가 "왜 부족한지"를 더 정확히
+        # 알 수 있게. enable_diversity가 꺼져 있으면(diversity가 None이거나 그 필드가
+        # False) 기존 동작(insufficient_candidates만) 그대로다.
+        if result.get("diversity") and result["diversity"].get("insufficient_diverse_candidates"):
+            warning = "insufficient_diverse_candidates"
+
+        # 공연이 실제로 어느 날의 schedule에도 안 실렸으면(마감 전 도착 불가 + 재배정으로도 실패,
+        # al02_pipeline.s4_solve_fallback이 공연만 남기고도 포기한 경우) 200으로 어설프게
+        # 돌려주지 않고 422로 명확히 알린다.
+        concert_scheduled = any(s["is_concert"] for day in result["days"] for s in day["schedule"])
+        if not concert_scheduled:
+            raise _err(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "공연 시작 전까지 도착 가능한 동선을 만들 수 없습니다.",
+                [],
+            )
+
+        response = schemas.TripRecommendOut(
+            trip_no=trip_no,
+            scoring_policy=result["scoring_policy"],
+            summary=schemas.RecommendSummaryOut(**result["summary"]),
+            days=[
+                schemas.RecommendDayOut(
+                    trip_route_no=None,
+                    visit_day=day["day_index"] + 1,  # trip_route.visit_day와 동일하게 1부터 시작
+                    date=day["date"],
+                    is_concert_day=day["is_concert_day"],
+                    schedule=day["schedule"],
+                )
+                for day in result["days"]
+            ],
+            warning=warning,
+            diversity=(
+                schemas.RecommendDiversityOut(**result["diversity"])
+                if result.get("diversity") is not None else None
+            ),
+        )
+    except HTTPException:
+        # _err()로 던진 4xx/5xx(동선 스타일 미설정/좌표 없음/이동시간 API 실패 등)도
+        # 전부 여기 해당 -- trip은 recommend가 성공해야 의미가 있는데, 실패한 채로
+        # 남아 있으면 화면에 "동선 없는 여행"이 더미데이터처럼 계속 보인다.
+        # POST /trips -> POST /trips/{trip_no}/recommend -> POST /trip-routes 호출
+        # 순서 자체는 그대로 두고(프론트 계약 변경 없음), 대신 recommend가 실패하면
+        # POST /trips가 만든 trip + 자식 행을 여기서 되돌린다.
+        _delete_trip_cascade(db, trip_no)
+        raise
+    except Exception:
+        _delete_trip_cascade(db, trip_no)
+        raise
     return response
 
 
