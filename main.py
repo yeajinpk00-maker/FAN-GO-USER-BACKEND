@@ -18,6 +18,11 @@ _PROCESS_STARTED_AT = datetime.now().isoformat()
 _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(_ENV_PATH)
 
+from logging_config import attach_uvicorn_file_logging, setup_logging
+
+# uvicorn이 로거를 세팅하기 전에 먼저 호출해야 uvicorn 로거에도 파일 핸들러가 붙는다.
+setup_logging()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -145,6 +150,9 @@ def _start_batch_scheduler():
     # 워커마다 스케줄러가 따로 돌아 같은 배치가 중복 실행된다(멱등해서 결과는 같지만
     # 낭비). 지금은 단일 워커 개발 서버라 문제 없음.
     start_scheduler()
+    # uvicorn이 자기 로거를 다 세팅한 뒤인 startup 시점에 붙여야
+    # uvicorn 쪽에서 핸들러를 갈아끼우며 지우는 일이 없다.
+    attach_uvicorn_file_logging()
 
 
 @app.get("/health")
