@@ -54,7 +54,8 @@ from rag_search import extract_metadata_filters, extract_travel_time_places, sea
 
 logger = logging.getLogger(__name__)
 
-CHAT_MODEL = "gpt-4o-mini"
+CHAT_MODEL = "gpt-5-nano"
+# CHAT_MODEL = "gpt-4o-mini"
 
 
 def _get_poi_business_hours_single(db: Session, event_no: int, op_dt: str | None) -> dict | None:
