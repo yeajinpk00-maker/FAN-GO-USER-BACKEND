@@ -18,9 +18,18 @@ _PROCESS_STARTED_AT = datetime.now().isoformat()
 _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(_ENV_PATH)
 
-from fastapi import FastAPI
+from logging_config import attach_uvicorn_file_logging, setup_logging
+
+# uvicorn이 로거를 세팅하기 전에 먼저 호출해야 uvicorn 로거에도 파일 핸들러가 붙는다.
+setup_logging()
+
+import logging
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import models
 from auth import router as auth_router
@@ -98,6 +107,47 @@ seed_defaults()
 app = FastAPI()
 app.include_router(auth_router)
 
+_error_logger = logging.getLogger("app.errors")
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _log_5xx_http_exceptions(request: Request, exc: StarletteHTTPException):
+    # auth.py 등에서 raise HTTPException(status_code=500, ...)로 "의도적으로" 500을
+    # 던지는 경우, FastAPI/Starlette는 이를 정상 처리된 예외로 취급해 uvicorn의
+    # 에러 로거(logs/app.log에 붙여둔 uvicorn.error 핸들러)까지 아예 안 간다 —
+    # 코드 버그로 인한 진짜 미처리 예외만 거기 찍히고, 이런 명시적 500은 로그 없이
+    # 조용히 JSON 응답만 나가서 "500 떴는데 로그에 아무것도 없다"가 발생했다.
+    # 여기서 5xx만 별도로 잡아 detail/traceback을 남긴다.
+    if exc.status_code >= 500:
+        _error_logger.error(
+            "%s %s -> %s %s",
+            request.method,
+            request.url.path,
+            exc.status_code,
+            exc.detail,
+            exc_info=True,
+        )
+    return JSONResponse(
+        {"detail": exc.detail},
+        status_code=exc.status_code,
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(Exception)
+async def _log_unhandled_exceptions(request: Request, exc: Exception):
+    # 코드 버그로 인한 진짜 미처리 예외. 여기서 직접 로깅해두면 uvicorn 로거 설정에
+    # 기대지 않고도(예: gunicorn+UvicornWorker 조합에서 log_config=None이라 uvicorn
+    # 로거가 아예 설정 안 되는 경우) 항상 logs/app.log에 남는다.
+    _error_logger.error(
+        "%s %s -> 500 (unhandled %s)",
+        request.method,
+        request.url.path,
+        type(exc).__name__,
+        exc_info=True,
+    )
+    return JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+
 # 로컬 개발 서버 주소 + 배포 서버(EC2) 프론트 주소.
 # allow_credentials=True 조합에서는 이 목록에 없는 origin은 브라우저가 응답을
 # CORS로 막아버리고, 그 결과가 프론트 쪽에는 "쿠키가 없어서 로그인이 풀린 것"과
@@ -145,6 +195,9 @@ def _start_batch_scheduler():
     # 워커마다 스케줄러가 따로 돌아 같은 배치가 중복 실행된다(멱등해서 결과는 같지만
     # 낭비). 지금은 단일 워커 개발 서버라 문제 없음.
     start_scheduler()
+    # uvicorn이 자기 로거를 다 세팅한 뒤인 startup 시점에 붙여야
+    # uvicorn 쪽에서 핸들러를 갈아끼우며 지우는 일이 없다.
+    attach_uvicorn_file_logging()
 
 
 @app.get("/health")

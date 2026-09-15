@@ -54,7 +54,8 @@ from rag_search import extract_metadata_filters, extract_travel_time_places, sea
 
 logger = logging.getLogger(__name__)
 
-CHAT_MODEL = "gpt-4o-mini"
+CHAT_MODEL = "gpt-5-nano"
+# CHAT_MODEL = "gpt-4o-mini"
 
 
 def _get_poi_business_hours_single(db: Session, event_no: int, op_dt: str | None) -> dict | None:
@@ -238,7 +239,6 @@ def route_intent(query: str) -> RouterDecision:
                 {"role": "user", "content": query},
             ],
             response_format={"type": "json_object"},
-            temperature=0,
         )
         parsed = json.loads(response.choices[0].message.content)
         path = parsed.get("path")
@@ -333,7 +333,6 @@ def run_function_calling(
             ],
             tools=schemas_to_offer,
             tool_choice="required",
-            temperature=0,
         )
         tool_calls = response.choices[0].message.tool_calls or []
     except Exception:
@@ -454,7 +453,6 @@ def generate_final_answer(
         response = _get_client().chat.completions.create(
             model=CHAT_MODEL,
             messages=messages,
-            temperature=0.4,
         )
         return response.choices[0].message.content, False
     except Exception as e:
@@ -543,7 +541,6 @@ def resolve_reference(query: str, referenced: dict) -> dict:
                 {"role": "user", "content": query},
             ],
             response_format={"type": "json_object"},
-            temperature=0,
         )
         parsed = json.loads(response.choices[0].message.content)
         rewritten = parsed.get("rewritten_query") or query
