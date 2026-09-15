@@ -1568,6 +1568,62 @@ def list_my_trips(
     return items
 
 
+@router.get("/trips/{trip_no}", response_model=schemas.TripOut, tags=["trip"])
+def get_trip(
+    trip_no: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """일정 단건 조회(2026-09-15 신규) — POST /trips 응답과 동일한 필드(출발/도착 지점
+    좌표 포함)를 다시 조회할 수 있게 한다. 기존엔 이 API가 없어 '여행 일정' 화면을
+    재진입/새로고침하면 POST 응답을 들고 있던 프론트 세션이 날아가면서 출발/도착
+    지점이 항상 '아직 안 정했어요'로 보이는 버그가 있었다(GET /trips 목록은 이 필드들을
+    안 내려주므로 목록으로도 복원 불가)."""
+    trip = db.query(Trip).filter(Trip.trip_no == trip_no).first()
+    if not trip:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="존재하지 않는 여행입니다."
+        )
+    if trip.user_no != current_user.user_no:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="본인의 여행이 아닙니다.")
+
+    accom_rows = db.query(Accom).filter(Accom.trip_no == trip_no).all()
+    interest_rows = (
+        db.query(TripInterest)
+        .filter(TripInterest.trip_no == trip_no)
+        .order_by(TripInterest.rank)
+        .all()
+    )
+    artist_nos = [
+        row[0]
+        for row in db.query(RuteArtistSelect.artist_no)
+        .filter(RuteArtistSelect.trip_no == trip_no)
+        .all()
+    ]
+
+    return schemas.TripOut(
+        trip_no=trip.trip_no,
+        event_no=trip.event_no,
+        event_date=trip.event_date,
+        start_dt=trip.start_dt,
+        end_dt=trip.end_dt,
+        start_tm=trip.start_tm,
+        end_tm=trip.end_tm,
+        start_place=trip.start_place,
+        start_place_lat=float(trip.start_place_lat) if trip.start_place_lat is not None else None,
+        start_place_lon=float(trip.start_place_lon) if trip.start_place_lon is not None else None,
+        end_place=trip.end_place,
+        end_place_lat=float(trip.end_place_lat) if trip.end_place_lat is not None else None,
+        end_place_lon=float(trip.end_place_lon) if trip.end_place_lon is not None else None,
+        trip_density_no=trip.trip_density_no,
+        accoms=accom_rows,
+        interests=[
+            schemas.TripInterestOut(ctg_no=row.ctg_no, rank=row.rank) for row in interest_rows
+        ],
+        artist_nos=artist_nos,
+    )
+
+
 @router.get(
     "/events/{event_no}",
     response_model=schemas.EventDetailOut,
