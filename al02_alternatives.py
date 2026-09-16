@@ -275,22 +275,14 @@ def get_alternatives(
         r.event_no: {"event_no": r.event_no, "ctg_no": r.ctg_no, "event_nm": r.event_nm}
         for r in trip_wide_rows
     }
-    # 2026-09-16 버그 수정: trip_route가 (trip_no, visit_day)당 여러 행으로 중복돼 있으면
-    # 이 JOIN이 fan-out돼 같은 event_no가 여러 번 나온다(실측: trip_no=280 visit_day=1에서
-    # 이벤트 7개가 전부 2번씩 찍혀 14개로 부풀려짐) — 뒤에서 이 개수(n)가 그대로
-    # s4_solve의 완전탐색 크기가 되므로, 중복을 순서 유지한 채 여기서 제거해 방어한다.
-    _seen_same_day = set()
-    same_day_event_nos = []
-    for r in (
-        db.query(TripRouteEvent.event_no)
+    same_day_event_nos = [
+        r.event_no
+        for r in db.query(TripRouteEvent.event_no)
         .join(TripRoute, TripRouteEvent.trip_route_no == TripRoute.trip_route_no)
         .filter(TripRoute.trip_no == trip_no, TripRoute.visit_day == resolved_visit_day)
         .order_by(TripRouteEvent.seq)
         .all()
-    ):
-        if r.event_no not in _seen_same_day:
-            _seen_same_day.add(r.event_no)
-            same_day_event_nos.append(r.event_no)
+    ]
 
     # N_non_concert_target(문서 4.5)을 내려면 이 트립의 밀도 프로파일이 필요하다.
     # trip_density_no가 아직 없으면(레거시/미설정) 가장 보수적인 값이 아니라 B(균형)로
@@ -610,18 +602,10 @@ def verify_swap(db: Session, trip_no: int, visit_day: int, event_nos_in_order: l
     day_start_min = user_start_min if user_start_min is not None else ROUTE_POLICY["DAY_START_MIN"]
     day_end_min = user_end_min if user_end_min is not None else ROUTE_POLICY["DAY_END_MIN"]
 
-    # 2026-09-16 버그 수정: max_places=n을 그대로 넘기면 s4_solve 내부의 non_concert[:mp]
-    # 트리밍이 무력화돼(mp가 곧 리스트 전체 길이라) itertools.permutations가 n! 그대로 돈다.
-    # 정상 흐름에서 하루 방문 개수는 al02_policy의 가장 큰 프로파일(C)도 최대 7곳인데, 위의
-    # trip_route JOIN 버그(중복 event_no) 등으로 n이 비정상적으로 커지면(실측: 14) 완전탐색이
-    # 사실상 끝나지 않는다(14! ≈ 871억) — 그것도 스레드풀에서 돌아 gunicorn 타임아웃도 안 먹혀
-    # 프로세스가 CPU 100%로 몇 시간씩 잡힌 실제 장애(2026-09-16)가 있었다. 정책상 최대치로
-    # 하드 캡을 걸어 데이터가 이상해도 완전탐색 크기가 절대 그 이상으로 못 커지게 막는다.
-    safe_max_places = min(n, VISIT_COUNT_PROFILES["C"]["max"])
     result = s4_solve(
         list(range(1, n + 1)), 0, 0, matrix, ["숙소"] + names, [0] + stays,
         concert_idx=concert_idx, concert_start=concert_start, concert_duration=concert_duration,
-        day_start=day_start_min, day_end=day_end_min, max_places=safe_max_places,
+        day_start=day_start_min, day_end=day_end_min, max_places=n,
     )
     if result["order"] is None or result["cost"] >= 99999:
         return {"ok": False, "schedule": None,
