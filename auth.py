@@ -25,7 +25,7 @@ import chatbot
 import schemas
 import security
 import travel_time_service
-from al02_pipeline import AL02Pipeline, DepotOverlapError, accoms_overlap
+from al02_pipeline import AL02Pipeline, DepotOverlapError, accoms_overlap, pick_depot_accom
 from al02_policy import (
     ALLOWED_OP_STATUS,
     CONCERT_VISIT_COUNT_PROFILES,
@@ -1751,6 +1751,55 @@ def _visit_op_dt(trip_start_dt: date, visit_day: int | None) -> str | None:
     return KOREAN_WEEKDAYS[visit_date.weekday()]
 
 
+def _resolve_day_depots(
+    trip: Trip, accoms_input: list[dict], visit_day: int | None, n_days: int,
+) -> tuple["schemas.DepotOut | None", "schemas.DepotOut | None"]:
+    """그 날(visit_day, 1부터)의 (출발지, 도착지)를 al02_pipeline.day_depots()와 동일한
+    우선순위(§4.2)로 계산한다 — 실제 동선 계산(recommend/verify_swap)은 이 값을 matrix
+    인덱스로만 쓰고 클라이언트에 절대 돌려주지 않았던 게 원인이었다(2026-09-16, 프론트가
+    "여행 생성 시 입력한 출발/도착/숙소를 다시 조회할 방법이 없다"고 보고). 여기서는
+    화면 표시용으로 좌표/이름만 계산해서 내려준다.
+      1순위: 1일차 시작 = trip.start_place(있으면) / 마지막날 도착 = trip.end_place(있으면)
+      기본값: 그 외(중간 날 전체 + 핀 없는 첫/마지막 날)는 그 날짜에 체크인 중인 숙소
+              (pick_depot_accom, al02_pipeline.py와 동일 함수 재사용 — 로직 이중 구현 없음)
+    visit_day가 아직 배정 안 됐으면(None) 판단 불가라 (None, None)."""
+    if visit_day is None:
+        return None, None
+
+    is_first = visit_day == 1
+    is_last = n_days > 0 and visit_day == n_days
+
+    start = None
+    if is_first and trip.start_place_lat is not None and trip.start_place_lon is not None:
+        start = schemas.DepotOut(
+            label=trip.start_place or "출발지",
+            lat=float(trip.start_place_lat), lon=float(trip.start_place_lon),
+            source="start_place",
+        )
+    end = None
+    if is_last and trip.end_place_lat is not None and trip.end_place_lon is not None:
+        end = schemas.DepotOut(
+            label=trip.end_place or "도착지",
+            lat=float(trip.end_place_lat), lon=float(trip.end_place_lon),
+            source="end_place",
+        )
+
+    if start is not None and end is not None:
+        return start, end
+
+    date_str = (trip.start_dt + timedelta(days=visit_day - 1)).isoformat()
+    depot_accom = pick_depot_accom(date_str, accoms_input)
+    accom_depot = (
+        schemas.DepotOut(
+            label=depot_accom.get("accom_nm") or depot_accom.get("add") or "숙소",
+            lat=depot_accom.get("lat"), lon=depot_accom.get("lon"),
+            source="accom",
+        )
+        if depot_accom is not None else None
+    )
+    return (start or accom_depot), (end or accom_depot)
+
+
 @router.get("/trips/{trip_no}/routes", response_model=list[schemas.TripRouteListItemOut], tags=["trip"])
 def list_trip_routes(
     trip_no: int,
@@ -1760,7 +1809,8 @@ def list_trip_routes(
 ):
     """특정 여행(또는 특정 일자)의 동선 — 일자별로 그 날의 장소 목록(장소별 좋아요 여부
     liked, 방문 요일 기준 오픈/마감 시간 business_hours, 행사 고정 시작/종료 시각
-    fixed_schedule 포함)을 묶어서 내려준다."""
+    fixed_schedule 포함)과 그 날의 출발/도착 지점(depot_start/depot_end, 2026-09-16 신규 —
+    §_resolve_day_depots 참고)을 묶어서 내려준다."""
     trip = db.query(Trip).filter(Trip.trip_no == trip_no).first()
     if not trip:
         raise HTTPException(
@@ -1773,6 +1823,23 @@ def list_trip_routes(
     if visit_day is not None:
         day_query = day_query.filter(TripRoute.visit_day == visit_day)
     day_rows = day_query.order_by(TripRoute.visit_day, TripRoute.trip_route_no).all()
+
+    n_days = (trip.end_dt - trip.start_dt).days + 1 if trip.end_dt and trip.start_dt else 0
+    accoms_input = [
+        {
+            "accom_no": a.accom_no, "accom_nm": a.accom_nm, "add": a.add,
+            "lat": float(a.accom_lat) if a.accom_lat is not None else None,
+            "lon": float(a.accom_lon) if a.accom_lon is not None else None,
+            "check_in_dt": a.check_in_dt.isoformat() if a.check_in_dt else None,
+            "check_out_dt": a.check_out_dt.isoformat() if a.check_out_dt else None,
+        }
+        for a in db.query(Accom).filter(Accom.trip_no == trip_no).all()
+        if a.accom_lat is not None and a.accom_lon is not None
+    ]
+    depots_by_day: dict[int, tuple["schemas.DepotOut | None", "schemas.DepotOut | None"]] = {
+        day.trip_route_no: _resolve_day_depots(trip, accoms_input, day.visit_day, n_days)
+        for day in day_rows
+    }
 
     day_nos = [d.trip_route_no for d in day_rows]
     events_by_day: dict[int, list[tuple[TripRouteEvent, str]]] = {}
@@ -1867,6 +1934,8 @@ def list_trip_routes(
             trip_route_no=day.trip_route_no,
             visit_day=day.visit_day,
             usage_status_no=day.usage_status_no,
+            depot_start=depots_by_day[day.trip_route_no][0],
+            depot_end=depots_by_day[day.trip_route_no][1],
             events=[
                 schemas.TripRouteEventListItemOut(
                     trip_route_event_no=ev.trip_route_event_no,

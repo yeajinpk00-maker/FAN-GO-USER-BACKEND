@@ -222,10 +222,25 @@ class TripRouteEventListItemOut(BaseModel):
     fixed_schedule: FixedScheduleOut | None = None
 
 
+class DepotOut(BaseModel):
+    """그 날의 출발/도착 지점(2026-09-16 신규) — 프론트가 GET /trips/{trip_no}/routes
+    응답 하나만으로 출발/도착지점을 표시할 수 있게 al02_pipeline.day_depots()와 동일한
+    우선순위(1일차=start_place, 마지막날=end_place, 그 외/핀 없으면 그날 체크인 중인
+    숙소)로 서버가 미리 계산해서 내려준다."""
+    label: str  # 화면 표시용 이름 — start_place/end_place 텍스트 또는 숙소명(accom_nm)
+    lat: float | None = None
+    lon: float | None = None
+    source: str  # "start_place" | "end_place" | "accom"
+
+
 class TripRouteListItemOut(BaseModel):
     trip_route_no: int
     visit_day: int | None = None
     usage_status_no: int
+    # visit_day가 없거나(미배정) 그 날 기준으로 출발/도착지를 정할 좌표가 하나도 없으면
+    # (start_place/end_place/숙소 전부 없음) null.
+    depot_start: DepotOut | None = None
+    depot_end: DepotOut | None = None
     events: list[TripRouteEventListItemOut]
 
 
