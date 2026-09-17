@@ -263,6 +263,16 @@ def _build_chroma_where(filters: MetadataFilters, exclude_poi_ids: list[int] | N
     # 카테고리로만 좁히는 질문(poi_ids가 빈 경우)에서만 의미가 있다.
     elif filters.ctg_nos:
         clauses.append({"ctg_no": {"$in": filters.ctg_nos}})
+    else:
+        # 2026-09-17 추가 — 장소도 카테고리도 특정 못한 경우(예: 질문에 나온 장소명이
+        # DB에 없어서 매칭 실패) congestion 문서는 제외한다. congestion 청크는 요일별
+        # 템플릿 문장이 장소만 다를 뿐 거의 동일해서, 필터 없이 순수 벡터 유사도로
+        # 검색하면 질문과 무관한 엉뚱한 장소의 congestion 청크가 top-1으로 뽑힐 수
+        # 있다("덕수궁 혼잡해" → DB에 없는 장소라 무필터 검색되며 "고척 스카이돔"
+        # 청크가 매칭되는 실측 버그). 장소/카테고리가 특정된 경우는 위 분기에서 이미
+        # 걸러지므로 여기엔 영향 없다 — event_desc/리뷰 등 congestion 아닌 문서는
+        # 그대로 검색된다.
+        clauses.append({"source": {"$ne": "congestion"}})
     if filters.congestion_weekdays:
         # 2026-09-10 v2.3 — 하드 필터로 강화. 이전엔 여기에 ""(전체 요일 요약 문서)를 항상
         # 끼워 넣어 안전망으로 남겨뒀는데, 실측(20건 배치 검증) 결과 그 안전망이 실제
