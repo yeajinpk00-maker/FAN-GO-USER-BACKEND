@@ -111,22 +111,24 @@ _error_logger = logging.getLogger("app.errors")
 
 
 @app.exception_handler(StarletteHTTPException)
-async def _log_5xx_http_exceptions(request: Request, exc: StarletteHTTPException):
-    # auth.py 등에서 raise HTTPException(status_code=500, ...)로 "의도적으로" 500을
+async def _log_http_exceptions(request: Request, exc: StarletteHTTPException):
+    # auth.py 등에서 raise HTTPException(status_code=..., ...)으로 "의도적으로" 에러를
     # 던지는 경우, FastAPI/Starlette는 이를 정상 처리된 예외로 취급해 uvicorn의
     # 에러 로거(logs/app.log에 붙여둔 uvicorn.error 핸들러)까지 아예 안 간다 —
-    # 코드 버그로 인한 진짜 미처리 예외만 거기 찍히고, 이런 명시적 500은 로그 없이
-    # 조용히 JSON 응답만 나가서 "500 떴는데 로그에 아무것도 없다"가 발생했다.
-    # 여기서 5xx만 별도로 잡아 detail/traceback을 남긴다.
-    if exc.status_code >= 500:
-        _error_logger.error(
-            "%s %s -> %s %s",
-            request.method,
-            request.url.path,
-            exc.status_code,
-            exc.detail,
-            exc_info=True,
-        )
+    # 코드 버그로 인한 진짜 미처리 예외만 거기 찍히고, 이런 명시적 에러는 access
+    # 로그(예: "POST /trips/299/recommend HTTP/1.1" 400)에 상태 코드만 남을 뿐
+    # detail 없이 조용히 JSON 응답만 나가서 "왜 400인지 로그로 알 수 없다"가
+    # 발생했다. 여기서 4xx/5xx 전부 잡아 detail을 남긴다 — traceback(exc_info)은
+    # 코드 버그 조사에 필요한 5xx에서만 붙이고, 요청 자체가 잘못된 4xx는 스택
+    # 없이 detail만 남겨 로그 노이즈를 줄인다.
+    _error_logger.error(
+        "%s %s -> %s %s",
+        request.method,
+        request.url.path,
+        exc.status_code,
+        exc.detail,
+        exc_info=exc.status_code >= 500,
+    )
     return JSONResponse(
         {"detail": exc.detail},
         status_code=exc.status_code,
